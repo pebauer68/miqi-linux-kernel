@@ -4111,7 +4111,8 @@ int rk_fb_register(struct rk_lcdc_driver *dev_drv,
 	}
 
 	/* show logo for primary display device */
-#if !defined(CONFIG_FRAMEBUFFER_CONSOLE)
+//#if !defined(CONFIG_FRAMEBUFFER_CONSOLE)
+#if 1
 	if (dev_drv->prop == PRMRY) {
 		u16 xact, yact;
 		int format;
