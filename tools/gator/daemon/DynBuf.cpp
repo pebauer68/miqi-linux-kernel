@@ -1,5 +1,5 @@
 /**
- * Copyright (C) ARM Limited 2013-2015. All rights reserved.
+ * Copyright (C) ARM Limited 2013-2014. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -40,9 +40,9 @@ int DynBuf::resize(const size_t minCapacity) {
 bool DynBuf::read(const char *const path) {
 	int result = false;
 
-	const int fd = open(path, O_RDONLY | O_CLOEXEC);
+	const int fd = open(path, O_RDONLY);
 	if (fd < 0) {
-		logg->logMessage("open failed");
+		logg->logMessage("%s(%s:%i): open failed", __FUNCTION__, __FILE__, __LINE__);
 		return false;
 	}
 
@@ -52,14 +52,14 @@ bool DynBuf::read(const char *const path) {
 		const size_t minCapacity = length + MIN_BUFFER_FREE + 1;
 		if (capacity < minCapacity) {
 			if (resize(minCapacity) != 0) {
-				logg->logMessage("DynBuf::resize failed");
+				logg->logMessage("%s(%s:%i): DynBuf::resize failed", __FUNCTION__, __FILE__, __LINE__);
 				goto fail;
 			}
 		}
 
 		const ssize_t bytes = ::read(fd, buf + length, capacity - length - 1);
 		if (bytes < 0) {
-			logg->logMessage("read failed");
+			logg->logMessage("%s(%s:%i): read failed", __FUNCTION__, __FILE__, __LINE__);
 			goto fail;
 		} else if (bytes == 0) {
 			break;
@@ -105,7 +105,7 @@ bool DynBuf::printf(const char *format, ...) {
 
 	if (capacity <= 0) {
 		if (resize(2 * MIN_BUFFER_FREE) != 0) {
-			logg->logMessage("DynBuf::resize failed");
+			logg->logMessage("%s(%s:%i): DynBuf::resize failed", __FUNCTION__, __FILE__, __LINE__);
 			return false;
 		}
 	}
@@ -114,13 +114,13 @@ bool DynBuf::printf(const char *format, ...) {
 	int bytes = vsnprintf(buf, capacity, format, ap);
 	va_end(ap);
 	if (bytes < 0) {
-		logg->logMessage("fsnprintf failed");
+		logg->logMessage("%s(%s:%i): fsnprintf failed", __FUNCTION__, __FILE__, __LINE__);
 		return false;
 	}
 
 	if (static_cast<size_t>(bytes) > capacity) {
 		if (resize(bytes + 1) != 0) {
-			logg->logMessage("DynBuf::resize failed");
+			logg->logMessage("%s(%s:%i): DynBuf::resize failed", __FUNCTION__, __FILE__, __LINE__);
 			return false;
 		}
 
@@ -128,7 +128,7 @@ bool DynBuf::printf(const char *format, ...) {
 		bytes = vsnprintf(buf, capacity, format, ap);
 		va_end(ap);
 		if (bytes < 0) {
-			logg->logMessage("fsnprintf failed");
+			logg->logMessage("%s(%s:%i): fsnprintf failed", __FUNCTION__, __FILE__, __LINE__);
 			return false;
 		}
 	}

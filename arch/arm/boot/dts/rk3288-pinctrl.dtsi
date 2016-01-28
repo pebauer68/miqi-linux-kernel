@@ -385,14 +385,14 @@
 		gpio7_i2c5 {
 			i2c5_sda:i2c5-sda {
 				rockchip,pins = <EDPHDMII2C_SDA>;
-				rockchip,pull = <VALUE_PULL_NORMAL>;
+				rockchip,pull = <VALUE_PULL_NORMAL>;//<VALUE_PULL_DISABLE>;
 				rockchip,drive = <VALUE_DRV_DEFAULT>;
 				//rockchip,tristate = <VALUE_TRI_DEFAULT>;
 			};
 
 			i2c5_scl:i2c5-scl {
 				rockchip,pins = <EDPHDMII2C_SCL>;
-				rockchip,pull = <VALUE_PULL_NORMAL>;
+				rockchip,pull = <VALUE_PULL_NORMAL>;//<VALUE_PULL_DISABLE>;
 				rockchip,drive = <VALUE_DRV_DEFAULT>;
 				//rockchip,tristate = <VALUE_TRI_DEFAULT>;
 			};
@@ -631,6 +631,10 @@
 				//rockchip,tristate = <VALUE_TRI_DEFAULT>;
 
 			};
+			spdif_gpio: spdif-gpio {
+				rockchip,pins =  <FUNC_TO_GPIO(SPDIF_TX)>;
+				rockchip,drive = <VALUE_DRV_DEFAULT>;
+			};
 		};
 
 		gpio7_pwm {
@@ -736,7 +740,7 @@
 			sdmmc0_clk: sdmmc0-clk {
 				rockchip,pins = <SDMMC0_CLKOUT>;
 				rockchip,pull = <VALUE_PULL_DISABLE>;
-				rockchip,drive = <VALUE_DRV_4MA>;
+				rockchip,drive = <VALUE_DRV_12MA>;
 				//rockchip,tristate = <VALUE_TRI_DEFAULT>;
 			};
 
@@ -941,30 +945,20 @@
 			};
 		};
 
-		gpio0_tsadc: gpio0-tsadc {
-			tsadc_int: tsadc-int {
-				rockchip,pins = <TSADC_INT>;
-				rockchip,pull = <VALUE_PULL_DISABLE>;
-			};
-			tsadc_gpio: tsadc-gpio {
-				rockchip,pins = <GPIO0_B2>;
-				rockchip,pull = <VALUE_PULL_DISABLE>;
-			};
-		};
+              gpio7_cec {
+                      hdmi_cec: hdmi-cec {
+                              rockchip,pins = <EDPHDMI_CECINOUTRESERVED>;
+                              rockchip,pull = <VALUE_PULL_NORMAL>;
+                              rockchip,drive = <VALUE_DRV_DEFAULT>;
+                       };
 
-		gpio7_cec {
-			hdmi_cec: hdmi-cec {
-				rockchip,pins = <EDPHDMI_CECINOUTRESERVED>;
-				rockchip,pull = <VALUE_PULL_NORMAL>;
-				rockchip,drive = <VALUE_DRV_DEFAULT>;
-			};
 
-			hdmi_cec_gpio: hdmi-cec-gpio {
-				rockchip,pins = <FUNC_TO_GPIO(EDPHDMI_CECINOUTRESERVED)>;
-				rockchip,pull = <VALUE_PULL_DISABLE>;
-				rockchip,drive = <VALUE_DRV_DEFAULT>;
-			};
-		};
+                      hdmi_cec_gpio: hdmi-cec-gpio {
+                              rockchip,pins = <FUNC_TO_GPIO(EDPHDMI_CECINOUTRESERVED)>;
+                               rockchip,pull = <VALUE_PULL_DISABLE>;
+                               rockchip,drive = <VALUE_DRV_DEFAULT>;
+                      };
+               };
 		//to add
 
 
@@ -1196,11 +1190,19 @@
 				rockchip,drive = <VALUE_DRV_DEFAULT>;
 				//rockchip,tristate = <VALUE_TRI_DEFAULT>;
 			};
-			isp_flash_trigger_as_gpio:isp_flash_trigger_as_gpio {
-                rockchip,pins = <FUNC_TO_GPIO(ISP_FLASHTRIGOUTSPI1_CS0)>;
-                rockchip,pull = <VALUE_PULL_DISABLE>;
-                rockchip,drive = <VALUE_DRV_DEFAULT>;
-                //rockchip,tristate = <VALUE_TRI_DEFAULT>;			
+			
+			isp_hsadc:isp_hsadc	{
+				rockchip,pins = <HSADC_DATA0>,<HSADC_DATA1>,
+								<HSADC_DATA2>,<HSADC_DATA3>,
+								<HSADC_DATA4>,<HSADC_DATA5>,
+								<HSADC_DATA6>,<HSADC_DATA7>,
+								<HSADCTS_SYNC>,<HSADCTS_VALID>,
+								<GPS_CLK>,<HSADCTS_FAIL>;
+                	rockchip,pull = <VALUE_PULL_UP>;
+                	//rockchip,voltage = <VALUE_VOL_DEFAULT>;
+                	rockchip,drive = <VALUE_DRV_DEFAULT>;
+                	//rockchip,tristate = <VALUE_TRI_DEFAULT>;
+
 			};
 		};
 

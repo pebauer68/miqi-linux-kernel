@@ -1,5 +1,5 @@
 /**
- * Copyright (C) ARM Limited 2010-2015. All rights reserved.
+ * Copyright (C) ARM Limited 2010-2014. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -12,11 +12,10 @@
 #include <semaphore.h>
 
 #include "Buffer.h"
-#include "Monitor.h"
 #include "OlySocket.h"
 #include "Source.h"
 
-// Counters from external sources like graphics drivers and annotations
+// Unix domain socket counters from external sources like graphics drivers
 class ExternalSource : public Source {
 public:
 	ExternalSource(sem_t *senderSem);
@@ -30,21 +29,8 @@ public:
 	void write(Sender *sender);
 
 private:
-	void waitFor(const int bytes);
-	void configureConnection(const int fd, const char *const handshake, size_t size);
-	bool connectMali();
-	bool connectMve();
-
-	sem_t mBufferSem;
 	Buffer mBuffer;
-	Monitor mMonitor;
-	OlyServerSocket mMveStartupUds;
-	OlyServerSocket mMaliStartupUds;
-	OlyServerSocket mAnnotate;
-	OlyServerSocket mAnnotateUds;
-	int mInterruptFd;
-	int mMaliUds;
-	int mMveUds;
+	OlySocket mSock;
 
 	// Intentionally unimplemented
 	ExternalSource(const ExternalSource &);

@@ -42,16 +42,12 @@ import subprocess
 allowed_warnings = set([
     "return_address.c:63",
     "hid-appleir.c:347",
-    "hid-magicmouse.c:590",
+    "hid-magicmouse.c:580",
     "hid-ntrig.c:1026",
     "core.c:1334",
     "menu.c:129",
     "bus.c:318", # FIXME
     "atags_to_fdt.c:96",
-    "compat_binfmt_elf.c:58",
-    "psci.c:268",
-    "psci.c:273",
-    "sysctl_net_core.c:24",
  ])
 
 # Capture the name of the object file, can find it.

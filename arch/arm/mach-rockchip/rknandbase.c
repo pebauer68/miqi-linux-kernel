@@ -22,9 +22,7 @@ struct rknand_info {
     int tag;
     int enable;
     int clk_rate[2];
-    int nand_suspend_state;
-    int nand_shutdown_state;
-    int reserved0[6];
+    int reserved0[8];
     
     void (*rknand_suspend)(void);
     void (*rknand_resume)(void);
@@ -61,30 +59,26 @@ int rknand_get_part_info(char **s)
 }
 EXPORT_SYMBOL(rknand_get_part_info); 
 
-static char nand_idb_data[2048];
+static char sn_data[512];
+static char vendor0[512];
+
 char GetSNSectorInfo(char * pbuf)
 {
-    memcpy(pbuf,&nand_idb_data[0x600],0x200);
+    memcpy(pbuf,sn_data,0x200);
     return 0;
 }
 
 char GetSNSectorInfoBeforeNandInit(char * pbuf)
 {
-    memcpy(pbuf,&nand_idb_data[0x600],0x200);
+    memcpy(pbuf,sn_data,0x200);
     return 0;
 } 
 
 char GetVendor0InfoBeforeNandInit(char * pbuf)
 {
-    memcpy(pbuf,&nand_idb_data[0x400+8],504);
+    memcpy(pbuf,vendor0 + 8,504);
     return 0;
 }
-
-char* rknand_get_idb_data(void)
-{
-    return nand_idb_data;
-}
-EXPORT_SYMBOL(rknand_get_idb_data);
 
 int  GetParamterInfo(char * pbuf , int len)
 {
@@ -145,33 +139,20 @@ EXPORT_SYMBOL(rk_nand_get_device);
 
 unsigned long rknand_dma_flush_dcache(unsigned long ptr,int size,int dir)
 {
-#ifdef CONFIG_ARM64
-	__flush_dcache_area((void *)ptr, size + 63);
-#else
      __cpuc_flush_dcache_area((void*)ptr, size + 63);
-#endif
     return ((unsigned long )virt_to_phys((void *)ptr));
 }
 EXPORT_SYMBOL(rknand_dma_flush_dcache);
 
 unsigned long rknand_dma_map_single(unsigned long ptr,int size,int dir)
 {
-#ifdef CONFIG_ARM64
-    __dma_map_area((void*)ptr, size, dir);
-    return ((unsigned long )virt_to_phys((void *)ptr));
-#else
     return dma_map_single(NULL,(void*)ptr,size, dir?DMA_TO_DEVICE:DMA_FROM_DEVICE);
-#endif
 }
 EXPORT_SYMBOL(rknand_dma_map_single);
 
 void rknand_dma_unmap_single(unsigned long ptr,int size,int dir)
 {
-#ifdef CONFIG_ARM64
-    __dma_unmap_area(phys_to_virt(ptr), size, dir);
-#else
     dma_unmap_single(NULL, (dma_addr_t)ptr,size, dir?DMA_TO_DEVICE:DMA_FROM_DEVICE);
-#endif
 }
 EXPORT_SYMBOL(rknand_dma_unmap_single);
 
@@ -181,10 +162,10 @@ int rknand_flash_cs_init(int id)
 }
 EXPORT_SYMBOL(rknand_flash_cs_init);
 
-int rknand_get_reg_addr(unsigned long *pNandc0,unsigned long *pNandc1,unsigned long *pSDMMC0,unsigned long *pSDMMC1,unsigned long *pSDMMC2)
+int rknand_get_reg_addr(int *pNandc0,int *pNandc1,int *pSDMMC0,int *pSDMMC1,int *pSDMMC2)
 {
-	*pNandc0 = (unsigned long)g_nandc_info[0].reg_base;
-	*pNandc1 = (unsigned long)g_nandc_info[1].reg_base;
+	*pNandc0 = (int)g_nandc_info[0].reg_base;
+	*pNandc1 = (int)g_nandc_info[1].reg_base;
 	return 0;
 }
 EXPORT_SYMBOL(rknand_get_reg_addr);
@@ -208,14 +189,6 @@ int rknand_nandc_irq_init(int id,int mode,void * pfun)
 }
 EXPORT_SYMBOL(rknand_nandc_irq_init);
 
-/*1:flash 2:emmc 4:sdcard0 8:sdcard1*/
-static int rknand_boot_media = 2;
-int rknand_get_boot_media(void)
-{
-	return rknand_boot_media;
-}
-EXPORT_SYMBOL(rknand_get_boot_media);
-
 static int rknand_probe(struct platform_device *pdev)
 {
 	unsigned int id = 0;
@@ -228,8 +201,6 @@ static int rknand_probe(struct platform_device *pdev)
         gpNandInfo = kzalloc(sizeof(struct rknand_info), GFP_KERNEL);
         if (!gpNandInfo)
             return -ENOMEM;
-        gpNandInfo->nand_suspend_state = 0;
-        gpNandInfo->nand_shutdown_state = 0;
 	}
 	mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	membase = devm_request_and_ioremap(&pdev->dev, mem);
@@ -248,12 +219,8 @@ static int rknand_probe(struct platform_device *pdev)
 #endif
     if(id == 0)
 	{
-        memcpy(nand_idb_data,membase+0x1000,0x800);
-		if (*(int *)(&nand_idb_data[0]) == 0x44535953) {
-			rknand_boot_media = *(int *)(&nand_idb_data[8]);
-			if (rknand_boot_media == 2) /*boot from emmc*/
-				return -1;
-		}
+        memcpy(vendor0,membase+0x1400,0x200);
+        memcpy(sn_data,membase+0x1600,0x200);
 	}
 	else if(id >= 2)
 	{
@@ -293,8 +260,8 @@ static int rknand_probe(struct platform_device *pdev)
 
 static int rknand_suspend(struct platform_device *pdev, pm_message_t state)
 {
-    if(gpNandInfo->rknand_suspend  && gpNandInfo->nand_suspend_state == 0){
-       gpNandInfo->nand_suspend_state = 1;
+    if(gpNandInfo->rknand_suspend)
+    {
         gpNandInfo->rknand_suspend();
         //TODO:nandc clk disable
 	}
@@ -303,8 +270,8 @@ static int rknand_suspend(struct platform_device *pdev, pm_message_t state)
 
 static int rknand_resume(struct platform_device *pdev)
 {
-    if(gpNandInfo->rknand_resume && gpNandInfo->nand_suspend_state == 1){
-       gpNandInfo->nand_suspend_state = 0;
+    if(gpNandInfo->rknand_resume)
+    {
        //TODO:nandc clk enable
        gpNandInfo->rknand_resume();  
 	}
@@ -313,10 +280,8 @@ static int rknand_resume(struct platform_device *pdev)
 
 static void rknand_shutdown(struct platform_device *pdev)
 {
-    if(gpNandInfo->rknand_buffer_shutdown && gpNandInfo->nand_shutdown_state == 0){
-        gpNandInfo->nand_shutdown_state = 1;
-        gpNandInfo->rknand_buffer_shutdown();
-    }
+    if(gpNandInfo->rknand_buffer_shutdown)
+        gpNandInfo->rknand_buffer_shutdown();    
 }
 
 void rknand_dev_cache_flush(void)

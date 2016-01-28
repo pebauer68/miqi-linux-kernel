@@ -246,11 +246,7 @@ static void fiq_debugger_prompt(struct fiq_debugger_state *state)
 
 static void fiq_debugger_dump_kernel_log(struct fiq_debugger_state *state)
 {
-#ifdef CONFIG_ARCH_ROCKCHIP
-	char buf[968];
-#else
 	char buf[512];
-#endif
 	size_t len;
 	struct kmsg_dumper dumper = { .active = true };
 
@@ -361,8 +357,6 @@ static void fiq_debugger_dump_irqs(struct fiq_debugger_state *state)
 		}
 	}
 	for (n = 0; n < NR_IPI; n++) {
-#define S(x,s)	[x] = s
-#ifdef CONFIG_ARM
 		enum ipi_msg_type {
 			IPI_WAKEUP,
 			IPI_TIMER,
@@ -374,6 +368,7 @@ static void fiq_debugger_dump_irqs(struct fiq_debugger_state *state)
 			IPI_CPU_BACKTRACE,
 		};
 		static const char *ipi_types[NR_IPI] = {
+#define S(x,s)	[x] = s
 			S(IPI_WAKEUP, "CPU wakeup"),
 			S(IPI_TIMER, "Timer broadcast"),
 			S(IPI_RESCHEDULE, "Rescheduling"),
@@ -382,24 +377,8 @@ static void fiq_debugger_dump_irqs(struct fiq_debugger_state *state)
 			S(IPI_CPU_STOP, "CPU stop"),
 			S(IPI_COMPLETION, "Completion"),
 			S(IPI_CPU_BACKTRACE, "CPU backtrace"),
-		};
-#elif defined(CONFIG_ARM64)
-		enum ipi_msg_type {
-			IPI_RESCHEDULE,
-			IPI_CALL_FUNC,
-			IPI_CALL_FUNC_SINGLE,
-			IPI_CPU_STOP,
-			IPI_TIMER,
-		};
-		static const char *ipi_types[NR_IPI] = {
-			S(IPI_RESCHEDULE, "Rescheduling"),
-			S(IPI_CALL_FUNC, "Function call"),
-			S(IPI_CALL_FUNC_SINGLE, "Single function call"),
-			S(IPI_CPU_STOP, "CPU stop"),
-			S(IPI_TIMER, "Timer broadcast"),
-		};
-#endif
 #undef S
+		};
 		for (cpu = 0; cpu < NR_CPUS; cpu++) {
 			unsigned int irqs = __get_irq_stat(cpu, ipi_irqs[n]);
 			if (irqs == 0)
@@ -605,8 +584,7 @@ static void fiq_debugger_help(struct fiq_debugger_state *state)
 				" pc            PC status\n"
 				" regs          Register dump\n"
 				" allregs       Extended Register dump\n"
-				" bt            Stack trace\n");
-	fiq_debugger_printf(&state->output,
+				" bt            Stack trace\n"
 				" reboot [<c>]  Reboot with command <c>\n"
 				" reset [<c>]   Hard reset with command <c>\n"
 				" irqs          Interupt status\n"

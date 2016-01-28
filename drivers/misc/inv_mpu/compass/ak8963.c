@@ -83,6 +83,7 @@ static int ak8963_init(void *mlsl_handle,
 {
 	int result;
 	unsigned char serial_data[COMPASS_NUM_AXES];
+	printk("yemk:ak8963_init\n");
 	struct ak8963_private_data *private_data;
 	private_data = (struct ak8963_private_data *)
 	    kzalloc(sizeof(struct ak8963_private_data), GFP_KERNEL);
@@ -602,7 +603,7 @@ static const struct i2c_device_id ak8963_mod_id[] = {
 MODULE_DEVICE_TABLE(i2c, ak8963_mod_id);
 
 static const struct of_device_id of_mpu_ak8963_match[] = {
-	{ .compatible = "mpu_ak8963" },
+	{ .compatible = "ak8963" },
 	{ /* Sentinel */ }
 };
 

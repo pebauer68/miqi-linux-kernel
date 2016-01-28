@@ -1048,7 +1048,6 @@ static int uvc_video_decode_start(struct uvc_streaming *stream,
 		uvc_trace(UVC_TRACE_FRAME, "Frame complete (FID bit "
 				"toggled).\n");
 		buf->state = UVC_BUF_STATE_READY;
-		buf->error = 1;
 		return -EAGAIN;
 	}
 
@@ -1077,7 +1076,6 @@ static void uvc_video_decode_data(struct uvc_streaming *stream,
 	if (len > maxlen) {
 		uvc_trace(UVC_TRACE_FRAME, "Frame complete (overflow).\n");
 		buf->state = UVC_BUF_STATE_READY;
-		buf->error = 1;
 	}
 }
 

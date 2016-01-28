@@ -11,7 +11,6 @@ Required properties:
 Optional properties:
 
 - map-exec: Map range to allow code execution
-- map-cacheable: Map range as cacheable
 
 Example:
 

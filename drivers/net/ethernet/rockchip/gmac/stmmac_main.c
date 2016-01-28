@@ -905,7 +905,6 @@ static int stmmac_init_phy(struct net_device *dev)
 	priv->oldlink = 0;
 	priv->speed = 0;
 	priv->oldduplex = -1;
-
 	if (priv->plat->phy_bus_name)
 		snprintf(bus_id, MII_BUS_ID_SIZE, "%s-%x",
 			 priv->plat->phy_bus_name, priv->plat->bus_id);
@@ -1129,9 +1128,6 @@ static void init_dma_desc_rings(struct net_device *dev)
 						  GFP_KERNEL);
 		if ((!priv->dma_rx) || (!priv->dma_tx))
 			return;
-
-		memset(priv->dma_rx, 0, rxsize * sizeof(struct dma_desc));
-		memset(priv->dma_tx, 0, txsize * sizeof(struct dma_desc));
 	}
 
 	priv->rx_skbuff_dma = kmalloc_array(rxsize, sizeof(dma_addr_t),
@@ -2787,7 +2783,6 @@ struct stmmac_priv *stmmac_dvr_probe(struct device *device,
 
 	/* Verify driver arguments */
 	stmmac_verify_args();
-
 	priv->plat->phy_addr = -1;
 
 	/* Override with kernel parameters if supplied XXX CRS XXX
@@ -2915,9 +2910,6 @@ int stmmac_suspend(struct net_device *ndev)
 {
 	struct stmmac_priv *priv = netdev_priv(ndev);
 	unsigned long flags;
-	bool pwr_off_phy = false;
-	struct bsp_priv * bsp_priv = NULL;
-
 	if (!ndev || !netif_running(ndev))
 		return 0;
 
@@ -2944,21 +2936,18 @@ int stmmac_suspend(struct net_device *ndev)
 		stmmac_set_mac(priv->ioaddr, false);
 		/* Disable clock in case of PWM is off */
 		if ((priv->plat) && (priv->plat->bsp_priv)) {
-			bsp_priv = priv->plat->bsp_priv;
-			pwr_off_phy = true;
-			if (bsp_priv && bsp_priv->gmac_clk_enable) {
-				bsp_priv->gmac_clk_enable(false);
+			struct bsp_priv * bsp_priv = priv->plat->bsp_priv;
+			if (bsp_priv) {
+				if (bsp_priv->gmac_clk_enable) {
+					bsp_priv->gmac_clk_enable(false);
+				}
+				if (bsp_priv->phy_power_on) {
+					bsp_priv->phy_power_on(false);
+				}
 			}
 		}
 	}
 	spin_unlock_irqrestore(&priv->lock, flags);
-
-	if (pwr_off_phy && bsp_priv) {
-		if (bsp_priv->phy_power_on) {
-			bsp_priv->phy_power_on(false);
-		}
-	}
-
 	return 0;
 }
 
@@ -2966,8 +2955,6 @@ int stmmac_resume(struct net_device *ndev)
 {
 	struct stmmac_priv *priv = netdev_priv(ndev);
 	unsigned long flags;
-	bool pwr_on_phy = false;
-	struct bsp_priv * bsp_priv = NULL;
 
 	if (!netif_running(ndev))
 		return 0;
@@ -2984,13 +2971,16 @@ int stmmac_resume(struct net_device *ndev)
 		priv->hw->mac->pmt(priv->ioaddr, 0);
 	else {
 		/* enable the clk prevously disabled */
-		if (priv->plat && (priv->plat->bsp_priv)) {
-			bsp_priv = priv->plat->bsp_priv;
-			if (bsp_priv && bsp_priv->gmac_clk_enable) {
-				bsp_priv->gmac_clk_enable(true);
+		if ((priv->plat) && (priv->plat->bsp_priv)) {
+			struct bsp_priv * bsp_priv = priv->plat->bsp_priv;
+			if (bsp_priv) {
+				if (bsp_priv->gmac_clk_enable) {
+					bsp_priv->gmac_clk_enable(true);
+				}
+				if (bsp_priv->phy_power_on) {
+					bsp_priv->phy_power_on(true);
+				}
 			}
-
-			pwr_on_phy = true;
 		}
 	}
 
@@ -3006,12 +2996,6 @@ int stmmac_resume(struct net_device *ndev)
 	netif_start_queue(ndev);
 
 	spin_unlock_irqrestore(&priv->lock, flags);
-
-	if (pwr_on_phy && bsp_priv) {
-		if (bsp_priv->phy_power_on) {
-			bsp_priv->phy_power_on(true);
-		}
-	}
 
 	if (priv->phydev)
 		phy_start(priv->phydev);

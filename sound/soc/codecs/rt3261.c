@@ -112,7 +112,7 @@ static struct rt3261_init_reg init_list[] = {
 	{RT3261_DEPOP_M3  	, 0x636},//0424
 	{RT3261_DEPOP_M1  	, 0x84},//0424
 	{RT3261_PWR_DIG1  	, 0x8000},//0424
-	{RT3261_PWR_ANLG2  	, 0x0800},
+	//{0x64  	, 0x0c00},//0424
 	// huangcun 20130816 s
 #if 0
 	/*speaker*/
@@ -278,7 +278,7 @@ static int rt3261_reset(struct snd_soc_codec *codec)
 {
 	return snd_soc_write(codec, RT3261_RESET, 0);
 }
-#if 0
+
 static unsigned int rt3261_read(struct snd_soc_codec *codec,
 		unsigned int reg)
 {
@@ -287,7 +287,7 @@ static unsigned int rt3261_read(struct snd_soc_codec *codec,
 	val = codec->hw_read(codec, reg);
 	return val;
 }
-#endif
+
 static int do_hw_write(struct snd_soc_codec *codec, unsigned int reg,
 		unsigned int value, const void *data, int len)
 {
@@ -3351,11 +3351,7 @@ static int rt3261_probe(struct snd_soc_codec *codec)
 {
 	struct rt3261_priv *rt3261 = snd_soc_codec_get_drvdata(codec);
 	int ret;
-#ifdef RTK_IOCTL
-#if defined(CONFIG_SND_HWDEP) || defined(CONFIG_SND_HWDEP_MODULE)
-	struct rt_codec_ops *ioctl_ops = rt_codec_get_ioctl_ops();
-#endif
-#endif
+
 	#if defined (CONFIG_SND_SOC_RT3224)
 	pr_info("Codec driver version %s, in fact you choose rt3224, no dsp!\n", VERSION);
 	#else
@@ -3449,6 +3445,7 @@ static int rt3261_probe(struct snd_soc_codec *codec)
 
 #ifdef RTK_IOCTL
 #if defined(CONFIG_SND_HWDEP) || defined(CONFIG_SND_HWDEP_MODULE)
+	struct rt_codec_ops *ioctl_ops = rt_codec_get_ioctl_ops();
 	ioctl_ops->index_write = rt3261_index_write;
 	ioctl_ops->index_read = rt3261_index_read;
 	ioctl_ops->index_update_bits = rt3261_index_update_bits;

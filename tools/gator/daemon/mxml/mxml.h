@@ -1,9 +1,9 @@
 /*
- * "$Id: mxml.h 451 2014-01-04 21:50:06Z msweet $"
+ * "$Id: mxml.h 427 2011-01-03 02:03:29Z mike $"
  *
  * Header file for Mini-XML, a small XML-like file parsing library.
  *
- * Copyright 2003-2014 by Michael R Sweet.
+ * Copyright 2003-2011 by Michael R Sweet.
  *
  * These coded instructions, statements, and computer programs are the
  * property of Michael R Sweet and are protected by Federal copyright
@@ -11,7 +11,7 @@
  * which should have been included with this file.  If this file is
  * missing or damaged, see the license at:
  *
- *     http://www.msweet.org/projects.php/Mini-XML
+ *     http://www.minixml.org/
  */
 
 /*
@@ -35,9 +35,6 @@
 /*
  * Constants...
  */
-
-#  define MXML_MAJOR_VERSION	2	/* Major version number */
-#  define MXML_MINOR_VERSION	8	/* Minor version number */
 
 #  define MXML_TAB		8	/* Tabs every N columns */
 
@@ -96,7 +93,7 @@ typedef enum mxml_type_e		/**** The XML node type. ****/
 typedef void (*mxml_custom_destroy_cb_t)(void *);
 					/**** Custom data destructor ****/
 
-typedef void (*mxml_error_cb_t)(const char *);
+typedef void (*mxml_error_cb_t)(const char *);  
 					/**** Error callback function ****/
 
 typedef struct mxml_attr_s		/**** An XML element attribute value. @private@ ****/
@@ -164,7 +161,7 @@ typedef struct mxml_index_s mxml_index_t;
 typedef int (*mxml_custom_load_cb_t)(mxml_node_t *, const char *);
 					/**** Custom data load callback function ****/
 
-typedef char *(*mxml_custom_save_cb_t)(mxml_node_t *);
+typedef char *(*mxml_custom_save_cb_t)(mxml_node_t *);  
 					/**** Custom data save callback function ****/
 
 typedef int (*mxml_entity_cb_t)(const char *);
@@ -176,7 +173,7 @@ typedef mxml_type_t (*mxml_load_cb_t)(mxml_node_t *);
 typedef const char *(*mxml_save_cb_t)(mxml_node_t *, int);
 					/**** Save callback function ****/
 
-typedef void (*mxml_sax_cb_t)(mxml_node_t *, mxml_sax_event_t, void *);
+typedef void (*mxml_sax_cb_t)(mxml_node_t *, mxml_sax_event_t, void *);  
 					/**** SAX callback function ****/
 
 
@@ -328,5 +325,5 @@ extern mxml_type_t	mxml_real_cb(mxml_node_t *node);
 
 
 /*
- * End of "$Id: mxml.h 451 2014-01-04 21:50:06Z msweet $".
+ * End of "$Id: mxml.h 427 2011-01-03 02:03:29Z mike $".
  */

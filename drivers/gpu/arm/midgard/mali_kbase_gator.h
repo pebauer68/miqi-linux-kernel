@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2011-2015 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -17,10 +17,9 @@
 
 /* NB taken from gator  */
 /*
- * List of possible actions to be controlled by DS-5 Streamline.
- * The following numbers are used by gator to control the frame buffer dumping
- * and s/w counter reporting. We cannot use the enums in mali_uk_types.h because
- * they are unknown inside gator.
+ * List of possible actions to be controlled by Streamline.
+ * The following numbers are used by gator to control the frame buffer dumping and s/w counter reporting.
+ * We cannot use the enums in mali_uk_types.h because they are unknown inside gator.
  */
 #ifndef _KBASE_GATOR_H_
 #define _KBASE_GATOR_H_
@@ -31,7 +30,7 @@
 #define GATOR_JOB_SLOT_STOP  2
 #define GATOR_JOB_SLOT_SOFT_STOPPED  3
 
-void kbase_trace_mali_job_slots_event(u32 event, const struct kbase_context *kctx, u8 atom_id);
+void kbase_trace_mali_job_slots_event(u32 event, const kbase_context *kctx, u8 atom_id);
 void kbase_trace_mali_pm_status(u32 event, u64 value);
 void kbase_trace_mali_pm_power_off(u32 event, u64 value);
 void kbase_trace_mali_pm_power_on(u32 event, u64 value);

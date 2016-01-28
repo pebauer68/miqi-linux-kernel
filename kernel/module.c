@@ -1866,9 +1866,7 @@ static void free_module(struct module *mod)
 
 	/* We leave it in list to prevent duplicate loads, but make sure
 	 * that noone uses it while it's being deconstructed. */
-	mutex_lock(&module_mutex);
 	mod->state = MODULE_STATE_UNFORMED;
-	mutex_unlock(&module_mutex);
 
 	/* Remove dynamic debug info */
 	ddebug_remove_module(mod->name);
@@ -2725,7 +2723,7 @@ static int check_modinfo(struct module *mod, struct load_info *info, int flags)
 	return 0;
 }
 
-static int find_module_sections(struct module *mod, struct load_info *info)
+static void find_module_sections(struct module *mod, struct load_info *info)
 {
 	mod->kp = section_objs(info, "__param",
 			       sizeof(*mod->kp), &mod->num_kp);
@@ -2755,18 +2753,6 @@ static int find_module_sections(struct module *mod, struct load_info *info)
 #ifdef CONFIG_CONSTRUCTORS
 	mod->ctors = section_objs(info, ".ctors",
 				  sizeof(*mod->ctors), &mod->num_ctors);
-	if (!mod->ctors)
-		mod->ctors = section_objs(info, ".init_array",
-				sizeof(*mod->ctors), &mod->num_ctors);
-	else if (find_sec(info, ".init_array")) {
-		/*
-		 * This shouldn't happen with same compiler and binutils
-		 * building all parts of the module.
-		 */
-		printk(KERN_WARNING "%s: has both .ctors and .init_array.\n",
-		       mod->name);
-		return -EINVAL;
-	}
 #endif
 
 #ifdef CONFIG_TRACEPOINTS
@@ -2805,8 +2791,6 @@ static int find_module_sections(struct module *mod, struct load_info *info)
 
 	info->debug = section_objs(info, "__verbose",
 				   sizeof(*info->debug), &info->num_debug);
-
-	return 0;
 }
 
 static int move_module(struct module *mod, struct load_info *info)
@@ -3262,9 +3246,7 @@ static int load_module(struct load_info *info, const char __user *uargs,
 
 	/* Now we've got everything in the final locations, we can
 	 * find optional sections. */
-	err = find_module_sections(mod, info);
-	if (err)
-		goto free_unload;
+	find_module_sections(mod, info);
 
 	err = check_module_license_and_versions(mod);
 	if (err)
@@ -3296,9 +3278,6 @@ static int load_module(struct load_info *info, const char __user *uargs,
 	}
 
 	dynamic_debug_setup(info->debug, info->num_debug);
-
-	/* Ftrace init must be called in the MODULE_STATE_UNFORMED state */
-	ftrace_module_init(mod);
 
 	/* Finally it's fully formed, ready to start executing. */
 	err = complete_formation(mod, info);

@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2012-2015 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -15,12 +15,17 @@
 
 
 
+
+
+/**
+ * @file mali_kbase_sync.c
+ *
+ */
+
 #ifdef CONFIG_SYNC
 
-#include <linux/seq_file.h>
 #include "sync.h"
 #include <mali_kbase.h>
-#include <mali_kbase_sync.h>
 
 struct mali_sync_timeline {
 	struct sync_timeline timeline;
@@ -30,7 +35,7 @@ struct mali_sync_timeline {
 
 struct mali_sync_pt {
 	struct sync_pt pt;
-	int order;
+	u32 order;
 	int result;
 };
 
@@ -48,7 +53,7 @@ static struct sync_pt *timeline_dup(struct sync_pt *pt)
 {
 	struct mali_sync_pt *mpt = to_mali_sync_pt(pt);
 	struct mali_sync_pt *new_mpt;
-	struct sync_pt *new_pt = sync_pt_create(sync_pt_parent(pt), sizeof(struct mali_sync_pt));
+	struct sync_pt *new_pt = sync_pt_create(pt->parent, sizeof(struct mali_sync_pt));
 
 	if (!new_pt)
 		return NULL;
@@ -58,20 +63,23 @@ static struct sync_pt *timeline_dup(struct sync_pt *pt)
 	new_mpt->result = mpt->result;
 
 	return new_pt;
+
 }
 
 static int timeline_has_signaled(struct sync_pt *pt)
 {
 	struct mali_sync_pt *mpt = to_mali_sync_pt(pt);
-	struct mali_sync_timeline *mtl = to_mali_sync_timeline(sync_pt_parent(pt));
+	struct mali_sync_timeline *mtl = to_mali_sync_timeline(pt->parent);
 	int result = mpt->result;
 
-	int diff = atomic_read(&mtl->signalled) - mpt->order;
+	long diff = atomic_read(&mtl->signalled) - mpt->order;
 
 	if (diff >= 0)
-		return (result < 0) ? result : 1;
-
-	return 0;
+	{
+		return result < 0 ?  result : 1;
+	}
+	else
+		return 0;
 }
 
 static int timeline_compare(struct sync_pt *a, struct sync_pt *b)
@@ -79,26 +87,26 @@ static int timeline_compare(struct sync_pt *a, struct sync_pt *b)
 	struct mali_sync_pt *ma = container_of(a, struct mali_sync_pt, pt);
 	struct mali_sync_pt *mb = container_of(b, struct mali_sync_pt, pt);
 
-	int diff = ma->order - mb->order;
+	long diff = ma->order - mb->order;
 
-	if (diff == 0)
+	if (diff < 0)
+		return -1;
+	else if (diff == 0)
 		return 0;
-
-	return (diff < 0) ? -1 : 1;
+	else
+		return 1;
 }
 
-static void timeline_value_str(struct sync_timeline *timeline, char *str,
+static void timeline_value_str(struct sync_timeline *timeline, char * str,
 			       int size)
 {
 	struct mali_sync_timeline *mtl = to_mali_sync_timeline(timeline);
-
 	snprintf(str, size, "%d", atomic_read(&mtl->signalled));
 }
 
 static void pt_value_str(struct sync_pt *pt, char *str, int size)
 {
 	struct mali_sync_pt *mpt = to_mali_sync_pt(pt);
-
 	snprintf(str, size, "%d(%d)", mpt->order, mpt->result);
 }
 
@@ -109,6 +117,10 @@ static struct sync_timeline_ops mali_timeline_ops = {
 	.compare = timeline_compare,
 	.timeline_value_str = timeline_value_str,
 	.pt_value_str       = pt_value_str,
+#if 0
+	.free_pt = timeline_free_pt,
+	.release_obj = timeline_release_obj
+#endif
 };
 
 int kbase_sync_timeline_is_ours(struct sync_timeline *timeline)
@@ -152,13 +164,14 @@ struct sync_pt *kbase_sync_pt_alloc(struct sync_timeline *parent)
 void kbase_sync_signal_pt(struct sync_pt *pt, int result)
 {
 	struct mali_sync_pt *mpt = to_mali_sync_pt(pt);
-	struct mali_sync_timeline *mtl = to_mali_sync_timeline(sync_pt_parent(pt));
+	struct mali_sync_timeline *mtl = to_mali_sync_timeline(pt->parent);
 	int signalled;
 	int diff;
 
 	mpt->result = result;
 
 	do {
+
 		signalled = atomic_read(&mtl->signalled);
 
 		diff = signalled - mpt->order;

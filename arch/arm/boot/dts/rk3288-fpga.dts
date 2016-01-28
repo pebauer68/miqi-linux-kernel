@@ -265,14 +265,13 @@
 		compatible = "rockchip,ion";
 		#address-cells = <1>;
 		#size-cells = <0>;
-		ion_cma: rockchip,ion-heap@4 { /* CMA HEAP */
-			compatible = "rockchip,ion-heap";
-			rockchip,ion_heap = <4>;
-			reg = <0x00000000 0x04000000>; /* 64MB */
+		rockchip,ion-heap@1 { /* CMA HEAP */
+			compatible = "rockchip,ion-reserve";
+			reg = <1>;
+			memory-reservation = <0x00000000 0x04000000>; /* 64MB */
 		};
-		rockchip,ion-heap@0 { /* VMALLOC HEAP */
-			compatible = "rockchip,ion-heap";
-			rockchip,ion_heap = <0>;
+		rockchip,ion-heap@3 { /* SYSTEM HEAP */
+			reg = <3>;
 		};
 	};
 
@@ -412,8 +411,8 @@
 		interrupts = <GIC_SPI 24 IRQ_TYPE_LEVEL_HIGH>;
 	};
 
-	usb5: usb@ff5c0000 {
-		compatible = "rockchip,rk3288_rk_ehci1_host";
+	usb5: hsic@ff5c0000 {
+		compatible = "rockchip,rk3288_rk_hsic_host";
 		reg = <0xff5c0000 0x40000>;
 		interrupts = <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>;
 	};

@@ -5,7 +5,6 @@
 
 /* eFuse controller register */
 #define EFUSE_A_SHIFT		(6)
-#define RK312X_EFUSE_A_SHIFT	(7)
 #define EFUSE_A_MASK		(0x3FF)
 //#define EFUSE_PD		(1 << 5)
 //#define EFUSE_PS		(1 << 4)
@@ -23,10 +22,8 @@
 
 #define RK3288_PROCESS_V0	0
 #define RK3288_PROCESS_V1	1
-#define RK3288_PROCESS_V2	2
 
 int rockchip_efuse_version(void);
 int rockchip_process_version(void);
 int rockchip_get_leakage(int ch);
-int rockchip_efuse_get_temp_adjust(int ch);
 #endif

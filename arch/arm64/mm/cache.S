@@ -30,8 +30,8 @@
  *
  *	Corrupted registers: x0-x7, x9-x11
  */
-__flush_dcache_all:
-	dmb	sy				// ensure ordering with previous memory accesses
+ENTRY(__flush_dcache_all)
+	dsb	sy				// ensure ordering with previous memory accesses
 	mrs	x0, clidr_el1			// read clidr
 	and	x3, x0, #0x7000000		// extract loc from clidr
 	lsr	x3, x3, #23			// left align loc bit field
@@ -128,7 +128,7 @@ USER(9f, dc	cvau, x4	)		// clean D line to PoU
 	add	x4, x4, x2
 	cmp	x4, x1
 	b.lo	1b
-	dsb	ish
+	dsb	sy
 
 	icache_line_size x2, x3
 	sub	x3, x2, #1
@@ -139,14 +139,14 @@ USER(9f, ic	ivau, x4	)		// invalidate I line PoU
 	cmp	x4, x1
 	b.lo	1b
 9:						// ignore any faulting cache operation
-	dsb	ish
+	dsb	sy
 	isb
 	ret
 ENDPROC(flush_icache_range)
 ENDPROC(__flush_cache_user_range)
 
 /*
- *	__flush_dcache_area(kaddr, size)
+ *	__flush_kern_dcache_page(kaddr)
  *
  *	Ensure that the data held in the page kaddr is written back to the
  *	page in question.
@@ -168,14 +168,6 @@ ENTRY(__flush_dcache_area)
 ENDPROC(__flush_dcache_area)
 
 /*
- *	__inval_cache_range(start, end)
- *	- start   - start address of region
- *	- end     - end address of region
- */
-ENTRY(__inval_cache_range)
-	/* FALLTHROUGH */
-
-/*
  *	__dma_inv_range(start, end)
  *	- start   - virtual start address of region
  *	- end     - virtual end address of region
@@ -183,22 +175,14 @@ ENTRY(__inval_cache_range)
 __dma_inv_range:
 	dcache_line_size x2, x3
 	sub	x3, x2, #1
-	tst	x1, x3				// end cache line aligned?
-	bic	x1, x1, x3
-	b.eq	1f
-	dc	civac, x1			// clean & invalidate D / U line
-1:	tst	x0, x3				// start cache line aligned?
 	bic	x0, x0, x3
-	b.eq	2f
-	dc	civac, x0			// clean & invalidate D / U line
-	b	3f
-2:	dc	ivac, x0			// invalidate D / U line
-3:	add	x0, x0, x2
+	bic	x1, x1, x3
+1:	dc	ivac, x0			// invalidate D / U line
+	add	x0, x0, x2
 	cmp	x0, x1
-	b.lo	2b
+	b.lo	1b
 	dsb	sy
 	ret
-ENDPROC(__inval_cache_range)
 ENDPROC(__dma_inv_range)
 
 /*

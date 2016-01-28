@@ -84,9 +84,6 @@ ktime_t rga_end;
 
 rga_session rga_session_global;
 
-long (*rga_ioctl_kernel_p)(struct rga_req *);
-
-
 struct rga_drvdata {
   	struct miscdevice miscdev;
   	struct device dev;
@@ -108,8 +105,6 @@ struct rga_drvdata {
 
 static struct rga_drvdata *drvdata;
 rga_service_info rga_service;
-struct rga_mmu_buf_t rga_mmu_buf;
-
 
 #if defined(CONFIG_ION_ROCKCHIP)
 extern struct ion_client *rockchip_ion_client_create(const char * name);
@@ -122,7 +117,7 @@ static void rga_try_set_reg(void);
 
 
 /* Logging */
-#define RGA_DEBUG 1
+#define RGA_DEBUG 0
 #if RGA_DEBUG
 #define DBG(format, args...) printk(KERN_DEBUG "%s: " format, DRIVER_NAME, ## args)
 #define ERR(format, args...) printk(KERN_ERR "%s: " format, DRIVER_NAME, ## args)
@@ -144,16 +139,14 @@ static void print_info(struct rga_req *req)
         req->src.act_w, req->src.act_h, req->src.vir_w, req->src.vir_h);
     printk("src : x_off = %.8x y_off = %.8x\n", req->src.x_offset, req->src.y_offset);
 
-    printk("dst : yrgb_addr = %.8x, dst.uv_addr = %.8x, dst.v_addr = %.8x, format = %d\n",
-            req->dst.yrgb_addr, req->dst.uv_addr, req->dst.v_addr, req->dst.format);
+    printk("dst : yrgb_addr = %.8x, dst.uv_addr = %.8x, dst.v_addr = %.8x\n",
+            req->dst.yrgb_addr, req->dst.uv_addr, req->dst.v_addr);
     printk("dst : x_off = %.8x y_off = %.8x\n", req->dst.x_offset, req->dst.y_offset);
     printk("dst : act_w = %d, act_h = %d, vir_w = %d, vir_h = %d\n",
         req->dst.act_w, req->dst.act_h, req->dst.vir_w, req->dst.vir_h);
 
     printk("clip.xmin = %d, clip.xmax = %d. clip.ymin = %d, clip.ymax = %d\n",
         req->clip.xmin, req->clip.xmax, req->clip.ymin, req->clip.ymax);
-
-    printk("mmu_flag = %.8x\n", req->mmu_info.mmu_flag);
 
     //printk("alpha_rop_flag = %.8x\n", req->alpha_rop_flag);
     //printk("alpha_rop_mode = %.8x\n", req->alpha_rop_mode);
@@ -251,11 +244,11 @@ static void rga_dump(void)
 		printk("task_running %d\n", running);
 		list_for_each_entry_safe(reg, reg_tmp, &session->waiting, session_link)
         {
-			printk("waiting register set 0x%.lu\n", (unsigned long)reg);
+			printk("waiting register set 0x%.8x\n", (unsigned int)reg);
 		}
 		list_for_each_entry_safe(reg, reg_tmp, &session->running, session_link)
         {
-			printk("running register set 0x%.lu\n", (unsigned long)reg);
+			printk("running register set 0x%.8x\n", (unsigned int)reg);
 		}
 	}
 }
@@ -317,7 +310,6 @@ static void rga_power_off_work(struct work_struct *work)
 		mutex_unlock(&rga_service.lock);
 	} else {
 		/* Come back later if the device is busy... */
-
 		rga_queue_power_off_work();
 	}
 }
@@ -447,12 +439,15 @@ static void rga_copy_reg(struct rga_reg *reg, uint32_t offset)
     atomic_add(1, &rga_service.cmd_num);
 	atomic_add(1, &reg->session->task_running);
 
-    cmd_buf = (uint32_t *)rga_service.cmd_buff + offset*32;
+    cmd_buf = (uint32_t *)rga_service.cmd_buff + offset*28;
     reg_p = (uint32_t *)reg->cmd_reg;
 
-    for(i=0; i<32; i++)
+    for(i=0; i<28; i++)
+    {
         cmd_buf[i] = reg_p[i];
+    }
 
+    dsb();
 }
 
 
@@ -534,8 +529,6 @@ static struct rga_reg * rga_reg_init_2(rga_session *session, struct rga_req *req
         INIT_LIST_HEAD(&reg1->session_link);
     	INIT_LIST_HEAD(&reg1->status_link);
 
-        req0->mmu_info.mmu_flag &= (~(1 << 10));
-
         if(req0->mmu_info.mmu_en)
         {
             ret = rga_set_mmu_info(reg0, req0);
@@ -546,8 +539,6 @@ static struct rga_reg * rga_reg_init_2(rga_session *session, struct rga_req *req
         }
 
         RGA_gen_reg_info(req0, (uint8_t *)reg0->cmd_reg);
-
-        req1->mmu_info.mmu_flag &= (~(1 << 8));
 
         if(req1->mmu_info.mmu_en)
         {
@@ -634,14 +625,12 @@ static void rga_try_set_reg(void)
             rga_copy_reg(reg, 0);
             rga_reg_from_wait_to_run(reg);
 
-            #ifdef CONFIG_ARM
-            dmac_flush_range(&rga_service.cmd_buff[0], &rga_service.cmd_buff[32]);
-            outer_flush_range(virt_to_phys(&rga_service.cmd_buff[0]),virt_to_phys(&rga_service.cmd_buff[32]));
-            #elif defined(CONFIG_ARM64)
-            __dma_flush_range(&rga_service.cmd_buff[0], &rga_service.cmd_buff[32]);
-            #endif
+            dmac_flush_range(&rga_service.cmd_buff[0], &rga_service.cmd_buff[28]);
+            outer_flush_range(virt_to_phys(&rga_service.cmd_buff[0]),virt_to_phys(&rga_service.cmd_buff[28]));
 
+            #if defined(CONFIG_ARCH_RK30)
             rga_soft_reset();
+            #endif
 
             rga_write(0x0, RGA_SYS_CTRL);
             rga_write(0, RGA_MMU_CTRL);
@@ -658,7 +647,6 @@ static void rga_try_set_reg(void)
                 printk("CMD_REG\n");
                 for (i=0; i<7; i++)
                     printk("%.8x %.8x %.8x %.8x\n", p[0 + i*4], p[1+i*4], p[2 + i*4], p[3 + i*4]);
-                printk("%.8x %.8x\n", p[0 + i*4], p[1+i*4]);
             }
 #endif
 
@@ -683,7 +671,6 @@ static void rga_try_set_reg(void)
                 for (i=0; i<7; i++)
                     printk("%.8x %.8x %.8x %.8x\n", rga_read(0x100 + i*16 + 0),
                             rga_read(0x100 + i*16 + 4), rga_read(0x100 + i*16 + 8), rga_read(0x100 + i*16 + 12));
-                printk("%.8x %.8x\n", rga_read(0x100 + i*16 + 0), rga_read(0x100 + i*16 + 4));
             }
 #endif
         }
@@ -702,14 +689,11 @@ static void rga_del_running_list(void)
     {
         reg = list_entry(rga_service.running.next, struct rga_reg, status_link);
 
-        if(reg->MMU_len != 0)
+        if(reg->MMU_base != NULL)
         {
-            if (rga_mmu_buf.back + reg->MMU_len > 2*rga_mmu_buf.size)
-                rga_mmu_buf.back = reg->MMU_len + rga_mmu_buf.size;
-            else
-                rga_mmu_buf.back += reg->MMU_len;
+            kfree(reg->MMU_base);
+            reg->MMU_base = NULL;
         }
-
         atomic_sub(1, &reg->session->task_running);
         atomic_sub(1, &rga_service.total_running);
 
@@ -731,13 +715,10 @@ static void rga_del_running_list_timeout(void)
     while(!list_empty(&rga_service.running))
     {
         reg = list_entry(rga_service.running.next, struct rga_reg, status_link);
-        
-        if(reg->MMU_len != 0)
+
+        if(reg->MMU_base != NULL)
         {
-            if (rga_mmu_buf.back + reg->MMU_len > 2*rga_mmu_buf.size)
-                rga_mmu_buf.back = reg->MMU_len + rga_mmu_buf.size;
-            else
-                rga_mmu_buf.back += reg->MMU_len;
+            kfree(reg->MMU_base);
         }
 
         atomic_sub(1, &reg->session->task_running);
@@ -809,77 +790,39 @@ static void rga_mem_addr_sel(struct rga_req *req)
 
 }
 
+
 static int rga_convert_dma_buf(struct rga_req *req)
 {
 	struct ion_handle *hdl;
 	ion_phys_addr_t phy_addr;
 	size_t len;
-    int ret;
-    uint32_t src_offset, dst_offset;
-
-    req->sg_src  = NULL;
-    req->sg_dst  = NULL;
-
-	  src_offset = req->line_draw_info.flag;
-	  dst_offset = req->line_draw_info.line_width;
 
     if(req->src.yrgb_addr) {
         hdl = ion_import_dma_buf(drvdata->ion_client, req->src.yrgb_addr);
-        if (IS_ERR(hdl)) {
-            ret = PTR_ERR(hdl);
-            printk("RGA2 ERROR ion buf handle\n");
-            return ret;
-        }
-        if ((req->mmu_info.mmu_flag >> 8) & 1) {
-            req->sg_src = ion_sg_table(drvdata->ion_client, hdl);
-            req->src.yrgb_addr = req->src.uv_addr;
-            req->src.uv_addr = req->src.yrgb_addr + (req->src.vir_w * req->src.vir_h);
-            req->src.v_addr = req->src.uv_addr + (req->src.vir_w * req->src.vir_h)/4;
-        }
-        else {
-            ion_phys(drvdata->ion_client, hdl, &phy_addr, &len);
-            req->src.yrgb_addr = phy_addr + src_offset;
-            req->src.uv_addr = req->src.yrgb_addr + (req->src.vir_w * req->src.vir_h);
-            req->src.v_addr = req->src.uv_addr + (req->src.vir_w * req->src.vir_h)/4;
-        }
+	    ion_phys(drvdata->ion_client, hdl, &phy_addr, &len);
+        req->src.yrgb_addr = phy_addr;
+        req->src.uv_addr = req->src.yrgb_addr + (req->src.vir_w * req->src.vir_h);
         ion_free(drvdata->ion_client, hdl);
     }
     else {
         req->src.yrgb_addr = req->src.uv_addr;
         req->src.uv_addr = req->src.yrgb_addr + (req->src.vir_w * req->src.vir_h);
-        req->src.v_addr = req->src.uv_addr + (req->src.vir_w * req->src.vir_h)/4;
     }
 
     if(req->dst.yrgb_addr) {
         hdl = ion_import_dma_buf(drvdata->ion_client, req->dst.yrgb_addr);
-        if (IS_ERR(hdl)) {
-            ret = PTR_ERR(hdl);
-            printk("RGA2 ERROR ion buf handle\n");
-            return ret;
-        }
-        if ((req->mmu_info.mmu_flag >> 10) & 1) {
-            req->sg_dst = ion_sg_table(drvdata->ion_client, hdl);
-            req->dst.yrgb_addr = req->dst.uv_addr;
-            req->dst.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-            req->dst.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
-        }
-        else {
-            ion_phys(drvdata->ion_client, hdl, &phy_addr, &len);
-            req->dst.yrgb_addr = phy_addr + dst_offset;
-            req->dst.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-            req->dst.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
-        }
+	    ion_phys(drvdata->ion_client, hdl, &phy_addr, &len);
+        req->dst.yrgb_addr = phy_addr;
+        req->dst.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
         ion_free(drvdata->ion_client, hdl);
     }
     else {
         req->dst.yrgb_addr = req->dst.uv_addr;
-        req->dst.uv_addr = req->dst.yrgb_addr + (req->dst.vir_w * req->dst.vir_h);
-        req->dst.v_addr = req->dst.uv_addr + (req->dst.vir_w * req->dst.vir_h)/4;
+        req->dst.uv_addr = req->dst.yrgb_addr + (req->src.vir_w * req->src.vir_h);
     }
 
     return 0;
 }
-
 
 static int rga_blit(rga_session *session, struct rga_req *req)
 {
@@ -895,14 +838,14 @@ static int rga_blit(rga_session *session, struct rga_req *req)
     daw = req->dst.act_w;
     dah = req->dst.act_h;
 
-    #if RGA_TEST
-    print_info(req);
-    #endif
-
     if(rga_convert_dma_buf(req)) {
         printk("RGA : DMA buf copy error\n");
         return -EFAULT;
     }
+
+    #if RGA_TEST
+    print_info(req);
+    #endif
 
     do {
         if((req->render_mode == bitblt_mode) && (((saw>>1) >= daw) || ((sah>>1) >= dah))) {
@@ -1091,20 +1034,6 @@ static long rga_ioctl(struct file *file, uint32_t cmd, unsigned long arg)
 long rga_ioctl_kernel(struct rga_req *req)
 {
 	int ret = 0;
-    if (!rga_ioctl_kernel_p) {
-        printk("rga_ioctl_kernel_p is NULL\n");
-        return -1;
-    }
-    else {
-        ret = (*rga_ioctl_kernel_p)(req);
-	    return ret;
-    }
-}
-
-
-long rga_ioctl_kernel_imp(struct rga_req *req)
-{
-	int ret = 0;
     rga_session *session;
 
     mutex_lock(&rga_service.mutex);
@@ -1117,7 +1046,24 @@ long rga_ioctl_kernel_imp(struct rga_req *req)
 		return -EINVAL;
 	}
 
-    ret = rga_blit_sync(session, req);
+	switch (RGA_BLIT_SYNC) {
+		case RGA_BLIT_SYNC:
+            ret = rga_blit_sync(session, req);
+            break;
+		case RGA_BLIT_ASYNC:
+			break;
+		case RGA_FLUSH:
+			break;
+        case RGA_GET_RESULT:
+            break;
+        case RGA_GET_VERSION:
+            //ret = 0;
+            break;
+		default:
+			ERR("unknown ioctl cmd!\n");
+			ret = -EINVAL;
+			break;
+	}
 
 	mutex_unlock(&rga_service.mutex);
 
@@ -1216,7 +1162,7 @@ static struct miscdevice rga_dev ={
 
 #if defined(CONFIG_OF)
 static const struct of_device_id rockchip_rga_dt_ids[] = {
-	{ .compatible = "rockchip,rk312x-rga", },
+	{ .compatible = "rockchip,rga", },
 	{},
 };
 #endif
@@ -1231,9 +1177,9 @@ static int rga_drv_probe(struct platform_device *pdev)
 	mutex_init(&rga_service.lock);
 	mutex_init(&rga_service.mutex);
 	atomic_set(&rga_service.total_running, 0);
+	atomic_set(&rga_service.src_format_swt, 0);
+	rga_service.last_prc_src_format = 1; /* default is yuv first*/
 	rga_service.enable = false;
-
-    rga_ioctl_kernel_p = rga_ioctl_kernel_imp;
 
 	data = devm_kzalloc(&pdev->dev, sizeof(struct rga_drvdata), GFP_KERNEL);
 	if(! data) {
@@ -1346,40 +1292,31 @@ static int __init rga_init(void)
 {
 	int ret;
     uint32_t *mmu_buf;
-    unsigned long *mmu_buf_virtual;
     uint32_t i;
     uint32_t *buf_p;
 
     /* malloc pre scale mid buf mmu table */
     mmu_buf = kzalloc(1024*8, GFP_KERNEL);
-    mmu_buf_virtual = kzalloc(1024*2*sizeof(unsigned long), GFP_KERNEL);
-    if(mmu_buf == NULL) {
+    if(mmu_buf == NULL)
+    {
         printk(KERN_ERR "RGA get Pre Scale buff failed. \n");
         return -1;
     }
 
-    /* malloc 4 M buf */
-    for(i=0; i<1024; i++) {
+    /* malloc 8 M buf */
+    for(i=0; i<2048; i++)
+    {
         buf_p = (uint32_t *)__get_free_page(GFP_KERNEL|__GFP_ZERO);
-        if(buf_p == NULL) {
+        if(buf_p == NULL)
+        {
             printk(KERN_ERR "RGA init pre scale buf falied\n");
             return -ENOMEM;
         }
-        mmu_buf[i] = virt_to_phys((void *)((unsigned long)buf_p));
-        mmu_buf_virtual[i] = (unsigned long)buf_p;
+
+        mmu_buf[i] = virt_to_phys((void *)((uint32_t)buf_p));
     }
 
     rga_service.pre_scale_buf = (uint32_t *)mmu_buf;
-    rga_service.pre_scale_buf_virtual = (unsigned long *)mmu_buf_virtual;
-
-    buf_p = kmalloc(1024*256, GFP_KERNEL);
-    rga_mmu_buf.buf_virtual = buf_p;
-    rga_mmu_buf.buf = (uint32_t *)virt_to_phys((void *)((unsigned long)buf_p));
-    rga_mmu_buf.front = 0;
-    rga_mmu_buf.back = 64*1024;
-    rga_mmu_buf.size = 64*1024;
-
-    rga_mmu_buf.pages = kmalloc((32768)* sizeof(struct page *), GFP_KERNEL);
 
 	if ((ret = platform_driver_register(&rga_driver)) != 0)
 	{
@@ -1423,24 +1360,17 @@ static void __exit rga_exit(void)
 
     rga_power_off();
 
-    for(i=0; i<1024; i++)
+    for(i=0; i<2048; i++)
     {
-        if((unsigned long)rga_service.pre_scale_buf_virtual[i])
+        if((uint32_t *)rga_service.pre_scale_buf[i] != NULL)
         {
-            __free_page((void *)rga_service.pre_scale_buf_virtual[i]);
+            __free_page((void *)rga_service.pre_scale_buf[i]);
         }
     }
 
     if(rga_service.pre_scale_buf != NULL) {
         kfree((uint8_t *)rga_service.pre_scale_buf);
     }
-
-    if (rga_mmu_buf.buf_virtual)
-        kfree(rga_mmu_buf.buf_virtual);
-
-    if (rga_mmu_buf.pages)
-        kfree(rga_mmu_buf.pages);
-
 	platform_driver_unregister(&rga_driver);
 }
 
@@ -1596,7 +1526,7 @@ void rga_test_0(void)
 }
 
 #endif
-fs_initcall(rga_init);
+module_init(rga_init);
 module_exit(rga_exit);
 
 /* Module information */

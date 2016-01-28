@@ -16,12 +16,6 @@ config RK32_LVDS
 	bool "RK32 lvds transmitter support"
 	depends on RK_TRSM
 
-config RK31XX_LVDS
-	bool "RK312x/RK3190/3368 lvds transmitter support"
-	depends on RK_TRSM
-	help
-		If use LVDS or RGB output interface,selete this module.
-
 config RK610_LVDS
 	bool "RK610(Jetta) lvds transmitter support"
 	depends on MFD_RK610 && RK_TRSM 
@@ -47,20 +41,13 @@ config RK32_DP
 	bool "RK32 RGB to DisplayPort transmitter support "
 	depends on RK_TRSM
 
-config RK_VGA
-         bool "VGA support on RockChip platform"
-         depends on RK_TRSM
-         default y
-         help
-           say y here will enable VGA on RockChip platform
-
 config MIPI_DSI
 	depends on RK_TRSM
 	bool "Rockchip MIPI DSI support"
 
 config TC358768_RGB2MIPI
         tristate "toshiba TC358768 RGB to MIPI DSI"
-	depends on MIPI_DSI
+		depends on MIPI_DSI
         help
         "a chip that change RGB interface parallel signal into DSI serial signal"
 
@@ -82,5 +69,4 @@ config RK616_MIPI_DSI_RST
 	depends on MFD_RK616 && RK616_MIPI_DSI && RK616_USE_MCLK_12M
 	default y
 	help
-	 if you say y here: inset the hdmi, mipi lcd will be reset. 
-
+	 if you say y here: inset the hdmi, mipi lcd will be reset.  

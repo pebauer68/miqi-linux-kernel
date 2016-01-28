@@ -3587,12 +3587,10 @@ static enum hrtimer_restart hmp_cpu_keepalive_notify(struct hrtimer *hrtimer)
  * If there are any, set ns_delay to
  * ('target_residency of state with shortest too-big latency' - 1) * 1000.
  */
-static void hmp_keepalive_delay(int cpu, unsigned int *ns_delay)
+static void hmp_keepalive_delay(unsigned int *ns_delay)
 {
-	struct cpuidle_device *dev = per_cpu(cpuidle_devices, cpu);
 	struct cpuidle_driver *drv;
-
-	drv = cpuidle_get_cpu_driver(dev);
+	drv = cpuidle_driver_ref();
 	if (drv) {
 		unsigned int us_delay = UINT_MAX;
 		unsigned int us_max_delay = *ns_delay / 1000;
@@ -3611,6 +3609,7 @@ static void hmp_keepalive_delay(int cpu, unsigned int *ns_delay)
 		else
 			*ns_delay = 1000 * (us_delay - 1);
 	}
+	cpuidle_driver_unref();
 }
 
 static void hmp_cpu_keepalive_trigger(void)
@@ -3624,7 +3623,7 @@ static void hmp_cpu_keepalive_trigger(void)
 				CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED);
 		keepalive->timer.function = hmp_cpu_keepalive_notify;
 
-		hmp_keepalive_delay(cpu, &ns_delay);
+		hmp_keepalive_delay(&ns_delay);
 		keepalive->delay = ns_to_ktime(ns_delay);
 		keepalive->init = true;
 	}
@@ -3810,13 +3809,8 @@ static struct sched_entity *hmp_get_lightest_task(
  * hmp_packing_enabled: runtime control over pack/spread
  * hmp_full_threshold: Consider a CPU with this much unweighted load full
  */
-#ifdef CONFIG_ARCH_ROCKCHIP
-unsigned int hmp_up_threshold = 479;
-unsigned int hmp_down_threshold = 214;
-#else
 unsigned int hmp_up_threshold = 700;
 unsigned int hmp_down_threshold = 512;
-#endif
 #ifdef CONFIG_SCHED_HMP_PRIO_FILTER
 unsigned int hmp_up_prio = NICE_TO_PRIO(CONFIG_SCHED_HMP_PRIO_FILTER_VAL);
 #endif
@@ -4390,7 +4384,7 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 
 #ifdef CONFIG_SCHED_HMP
 	/* always put non-kernel forking tasks on a big domain */
-	if (unlikely(sd_flag & SD_BALANCE_FORK) && hmp_task_should_forkboost(p)) {
+	if (p->mm && (sd_flag & SD_BALANCE_FORK)) {
 		new_cpu = hmp_select_faster_cpu(p, prev_cpu);
 		if (new_cpu != NR_CPUS) {
 			hmp_next_up_delay(&p->se, new_cpu);
@@ -4489,11 +4483,7 @@ unlock:
 #else
 		new_cpu = hmp_select_slower_cpu(p, prev_cpu);
 #endif
-		/*
-		 * we might have no suitable CPU
-		 * in which case new_cpu == NR_CPUS
-		 */
-		if (new_cpu < NR_CPUS && new_cpu != prev_cpu) {
+		if (new_cpu != prev_cpu) {
 			hmp_next_down_delay(&p->se, new_cpu);
 			trace_sched_hmp_migrate(p, new_cpu, HMP_MIGRATE_WAKEUP);
 			return new_cpu;
@@ -6494,10 +6484,10 @@ static int __do_active_load_balance_cpu_stop(void *data, bool check_sd_lb_flag)
 	rcu_read_unlock();
 	double_unlock_balance(busiest_rq, target_rq);
 out_unlock:
-	busiest_rq->active_balance = 0;
-	raw_spin_unlock_irq(&busiest_rq->lock);
 	if (!check_sd_lb_flag)
 		put_task_struct(p);
+	busiest_rq->active_balance = 0;
+	raw_spin_unlock_irq(&busiest_rq->lock);
 	return 0;
 }
 
@@ -6542,16 +6532,16 @@ static int nohz_test_cpu(int cpu)
  * Decide if the tasks on the busy CPUs in the
  * littlest domain would benefit from an idle balance
  */
-static int hmp_packing_ilb_needed(int cpu, int ilb_needed)
+static int hmp_packing_ilb_needed(int cpu)
 {
 	struct hmp_domain *hmp;
-	/* allow previous decision on non-slowest domain */
+	/* always allow ilb on non-slowest domain */
 	if (!hmp_cpu_is_slowest(cpu))
-		return ilb_needed;
+		return 1;
 
 	/* if disabled, use normal ILB behaviour */
 	if (!hmp_packing_enabled)
-		return ilb_needed;
+		return 1;
 
 	hmp = hmp_cpu_domain(cpu);
 	for_each_cpu_and(cpu, &hmp->cpus, nohz.idle_cpus_mask) {
@@ -6563,34 +6553,19 @@ static int hmp_packing_ilb_needed(int cpu, int ilb_needed)
 }
 #endif
 
-DEFINE_PER_CPU(cpumask_var_t, ilb_tmpmask);
-
 static inline int find_new_ilb(int call_cpu)
 {
 	int ilb = cpumask_first(nohz.idle_cpus_mask);
 #ifdef CONFIG_SCHED_HMP
-	int ilb_needed = 0;
-	int cpu;
-	struct cpumask* tmp = per_cpu(ilb_tmpmask, smp_processor_id());
+	int ilb_needed = 1;
 
 	/* restrict nohz balancing to occur in the same hmp domain */
 	ilb = cpumask_first_and(nohz.idle_cpus_mask,
 			&((struct hmp_domain *)hmp_cpu_domain(call_cpu))->cpus);
 
-	/* check to see if it's necessary within this domain */
-	cpumask_andnot(tmp,
-			&((struct hmp_domain *)hmp_cpu_domain(call_cpu))->cpus,
-			nohz.idle_cpus_mask);
-	for_each_cpu(cpu, tmp) {
-		if (cpu_rq(cpu)->nr_running > 1) {
-			ilb_needed = 1;
-			break;
-		}
-	}
-
 #ifdef CONFIG_SCHED_HMP_LITTLE_PACKING
 	if (ilb < nr_cpu_ids)
-		ilb_needed = hmp_packing_ilb_needed(ilb, ilb_needed);
+		ilb_needed = hmp_packing_ilb_needed(ilb);
 #endif
 
 	if (ilb_needed && ilb < nr_cpu_ids && idle_cpu(ilb))

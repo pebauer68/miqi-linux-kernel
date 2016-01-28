@@ -253,10 +253,9 @@ static void __init pseries_discover_pic(void)
 	       " interrupt-controller\n");
 }
 
-static int pci_dn_reconfig_notifier(struct notifier_block *nb, unsigned long action, void *data)
+static int pci_dn_reconfig_notifier(struct notifier_block *nb, unsigned long action, void *node)
 {
-	struct of_reconfig_data *rd = data;
-	struct device_node *np = rd->dn;
+	struct device_node *np = node;
 	struct pci_dn *pci = NULL;
 	int err = NOTIFY_OK;
 
@@ -647,7 +646,7 @@ static int __init pseries_probe_fw_features(unsigned long node,
 					    void *data)
 {
 	const char *prop;
-	int len;
+	unsigned long len;
 	static int hypertas_found;
 	static int vec5_found;
 
@@ -680,7 +679,7 @@ static int __init pseries_probe_fw_features(unsigned long node,
 static int __init pSeries_probe(void)
 {
 	unsigned long root = of_get_flat_dt_root();
-	const char *dtype = of_get_flat_dt_prop(root, "device_type", NULL);
+ 	char *dtype = of_get_flat_dt_prop(root, "device_type", NULL);
 
  	if (dtype == NULL)
  		return 0;

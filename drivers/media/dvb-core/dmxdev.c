@@ -29,6 +29,7 @@
 #include <linux/ioctl.h>
 #include <linux/wait.h>
 #include <asm/uaccess.h>
+#include <asm/system.h>
 #include "dmxdev.h"
 
 static int debug;
@@ -286,6 +287,24 @@ static int dvb_dvr_set_buffer_size(struct dmxdev *dmxdev,
 	return 0;
 }
 
+static int dvb_dvr_get_buffer_size(struct dmxdev *dmxdev,
+				      unsigned long *size)
+{
+	struct dvb_ringbuffer *buf = &dmxdev->dvr_buffer;
+	ssize_t avail;
+	
+
+	if (buf->size == 0)
+		return 0;
+	
+	spin_lock_irq(&dmxdev->lock);
+	avail = dvb_ringbuffer_avail(buf);
+	*size = avail;
+	spin_unlock_irq(&dmxdev->lock);
+
+	return avail;
+}
+
 static inline void dvb_dmxdev_filter_state_set(struct dmxdev_filter
 					       *dmxdevfilter, int state)
 {
@@ -325,6 +344,23 @@ static int dvb_dmxdev_set_buffer_size(struct dmxdev_filter *dmxdevfilter,
 	vfree(oldmem);
 
 	return 0;
+}
+static int dvb_dmxdev_get_buffer_size(struct dmxdev_filter *dmxdevfilter,
+				      unsigned long *size)
+{
+	struct dvb_ringbuffer *buf = &dmxdevfilter->buffer;
+	ssize_t avail;
+
+
+	if (buf->size == 0)
+		return 0;
+	
+	spin_lock_irq(&dmxdevfilter->dev->lock);
+	avail = dvb_ringbuffer_avail(buf);
+	*size = avail;
+	spin_unlock_irq(&dmxdevfilter->dev->lock);
+
+	return avail;
 }
 
 static void dvb_dmxdev_filter_timeout(unsigned long data)
@@ -377,8 +413,10 @@ static int dvb_dmxdev_section_callback(const u8 *buffer1, size_t buffer1_len,
 		ret = dvb_dmxdev_buffer_write(&dmxdevfilter->buffer, buffer2,
 					      buffer2_len);
 	}
-	if (ret < 0)
+	if (ret < 0) {
+		dvb_ringbuffer_flush(&dmxdevfilter->buffer);
 		dmxdevfilter->buffer.error = ret;
+	}
 	if (dmxdevfilter->params.sec.flags & DMX_ONESHOT)
 		dmxdevfilter->state = DMXDEV_STATE_DONE;
 	spin_unlock(&dmxdevfilter->dev->lock);
@@ -414,8 +452,10 @@ static int dvb_dmxdev_ts_callback(const u8 *buffer1, size_t buffer1_len,
 	ret = dvb_dmxdev_buffer_write(buffer, buffer1, buffer1_len);
 	if (ret == buffer1_len)
 		ret = dvb_dmxdev_buffer_write(buffer, buffer2, buffer2_len);
-	if (ret < 0)
+	if (ret < 0) {
+		dvb_ringbuffer_flush(buffer);
 		buffer->error = ret;
+	}
 	spin_unlock(&dmxdevfilter->dev->lock);
 	wake_up(&buffer->queue);
 	return 0;
@@ -1017,6 +1057,19 @@ static int dvb_demux_do_ioctl(struct file *file,
 		mutex_unlock(&dmxdevfilter->mutex);
 		break;
 
+	case DMX_GET_BUFFER_SIZE:
+		if (mutex_lock_interruptible(&dmxdevfilter->mutex)) {
+			mutex_unlock(&dmxdev->mutex);
+			return -ERESTARTSYS;
+		}
+		ret = dvb_dmxdev_get_buffer_size(dmxdevfilter, parg);
+		if(ret  >  (dmxdevfilter->buffer.size - dmxdevfilter->buffer.size/10))
+		{
+			dvb_ringbuffer_flush(&dmxdevfilter->buffer);
+		}
+		mutex_unlock(&dmxdevfilter->mutex);
+		break;		
+
 	case DMX_GET_PES_PIDS:
 		if (!dmxdev->demux->get_pes_pids) {
 			ret = -EINVAL;
@@ -1162,7 +1215,13 @@ static int dvb_dvr_do_ioctl(struct file *file,
 	case DMX_SET_BUFFER_SIZE:
 		ret = dvb_dvr_set_buffer_size(dmxdev, arg);
 		break;
-
+	case DMX_GET_BUFFER_SIZE:
+		ret = dvb_dvr_get_buffer_size(dmxdev, parg);
+		if(ret  >  (dmxdev->dvr_buffer.size - dmxdev->dvr_buffer.size/10))
+		{
+			dvb_ringbuffer_flush(&dmxdev->dvr_buffer);
+		}		
+		break;
 	default:
 		ret = -EINVAL;
 		break;

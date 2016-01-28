@@ -6,9 +6,6 @@
 #define PRMRY		1		/*primary display device*/
 #define EXTEND		2		/*extend display device*/
 
-#define DISPLAY_SOURCE_LCDC0	0
-#define DISPLAY_SOURCE_LCDC1	1
-
 #define NO_DUAL		0
 #define ONE_DUAL	1
 #define DUAL		2
@@ -20,8 +17,6 @@
 #define OUT_CCIR656         6
 #define OUT_S888            8
 #define OUT_S888DUMY        12
-#define OUT_YUV_420	    14
-#define OUT_P101010	    15
 #define OUT_P16BPP4         24
 #define OUT_D888_P666       0x21	//18bit screen,connect to lcdc D2~D7, D10~D15, D18~D23
 #define OUT_D888_P565       0x22
@@ -36,16 +31,11 @@
 #define SCREEN_MIPI	   7
 #define SCREEN_DUAL_MIPI   8
 #define SCREEN_EDP         9
-#define SCREEN_TVOUT_TEST  10
-#define SCREEN_LVDS_10BIT	 11
-#define SCREEN_DUAL_LVDS_10BIT   12
 
 #define LVDS_8BIT_1     0
 #define LVDS_8BIT_2     1
 #define LVDS_8BIT_3     2
 #define LVDS_6BIT       3
-#define LVDS_10BIT_1    4
-#define LVDS_10BIT_2    5
 
 #define NO_MIRROR	0
 #define X_MIRROR    	1
@@ -54,24 +44,6 @@
 #define ROTATE_90	4
 #define ROTATE_180	8
 #define ROTATE_270	12
-
-#define COLOR_RGB	0
-#define COLOR_YCBCR	1
-
-/* fb win map */
-#define FB_DEFAULT_ORDER		0
-#define FB0_WIN2_FB1_WIN1_FB2_WIN0	12
-#define FB0_WIN1_FB1_WIN2_FB2_WIN0	21
-#define FB0_WIN2_FB1_WIN0_FB2_WIN1	102
-#define FB0_WIN0_FB1_WIN2_FB2_WIN1	120
-#define FB0_WIN0_FB1_WIN1_FB2_WIN2	210
-#define FB0_WIN1_FB1_WIN0_FB2_WIN2	201
-#define FB0_WIN0_FB1_WIN1_FB2_WIN2_FB3_WIN3	    3210
-#define FB0_WIN0_FB1_WIN1_FB2_WIN2_FB3_WIN3_FB4_HWC 43210
-
-#define DISPLAY_POLICY_SDK	0
-#define DISPLAY_POLICY_BOX	1
-#define DISPLAY_POLICY_BOX_TEMP	2
 
 /*      	lvds connect config       
  *                                        
@@ -109,49 +81,6 @@ Y	TX11   	G7		G1		GND		GND
 	TX17   	B7		B1		GND		GND
 	TX23   	RSVD		RSVD		RSVD		RSVD
 ----------------------------------------------------------------------
-
- *          	LVDS_10BIT_1    LVDS_10BIT_2
-----------------------------------------------------------------------
-	TX0	R0		R4
-	TX1	R1		R5
-	TX2	R2		R6
-Y	TX3	R3		R7
-0	TX4	R4		R8
-	TX6	R5		R9
-	TX7	G0		G4
-----------------------------------------------------------------------
-	TX8	G1		G5
-	TX9	G2		G6
-Y	TX12   	G3		G7
-1	TX13   	G4		G8
-	TX14   	G5		G9
-	TX15   	B0		B4
-	TX18   	B1		B5
-----------------------------------------------------------------------
-	TX19	B2		B6
-	TX20   	B3		B7
-	TX21   	B4		B8
-Y	TX22   	B5		B9
-2	TX24   	HSYNC		HSYNC
-        TX25	VSYNC		VSYNC
-	TX26	ENABLE		ENABLE
-----------------------------------------------------------------------
-	TX27	R6		R2
-	TX5	R7		R3
-	TX10   	G6		G2
-Y	TX11   	G7		G3
-3	TX16   	B6		B2
-	TX17   	B7		B3
-	TX23   	GND		GND
-----------------------------------------------------------------------
-	TX27	R8		R0
-	TX5	R9		R1
-	TX10   	G8		G0
-Y	TX11   	G9		G1
-4	TX16   	B8		B0
-	TX17   	B9		B1
-	TX23   	GND		GND
-------------------------------------------------------------------------
 */
 
 #endif

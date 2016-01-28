@@ -64,7 +64,6 @@ struct rk_screen {
 	u16 type;
 	u16 lvds_format; 
 	u16 face;
-	u16 color_mode;
 	u8 lcdc_id;   
 	u8 screen_id; 
 	struct fb_videomode mode;
@@ -75,15 +74,12 @@ struct rk_screen {
 	u16 x_mirror;
 	u16 y_mirror;
 	int interlace;
-	int pixelrepeat; //For 480i/576i format, pixel is repeated twice.
 	u16 width;
 	u16 height;
 	u8  ft;
-	int *dsp_lut;
-	int *cabc_lut;
-	int *cabc_gamma_base;
+	int *dsp_lut; 
 
-#if defined(CONFIG_MFD_RK616) || defined(CONFIG_LCDC_RK312X)
+#if defined(CONFIG_MFD_RK616)
 	u32 pll_cfg_val;  //bellow are for jettaB
 	u32 frac;
 	u16 scl_vst;
@@ -144,7 +140,7 @@ struct rk29fb_info {
 };
 
 extern void set_lcd_info(struct rk_screen *screen, struct rk29lcd_info *lcd_info);
-extern size_t get_fb_size(u8 reserved_fb);
+extern size_t get_fb_size(void);
 
 extern void set_tv_info(struct rk_screen *screen);
 extern void set_hdmi_info(struct rk_screen *screen);

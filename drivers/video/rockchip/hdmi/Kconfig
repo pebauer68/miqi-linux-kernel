@@ -1,10 +1,9 @@
 menuconfig RK_HDMI
        bool "Rockchip HDMI support"
-       depends on FB_ROCKCHIP || DRM_ROCKCHIP
+       depends on FB_ROCKCHIP
        select FB_MODE_HELPERS
-
-source "drivers/video/rockchip/hdmi/rockchip-hdmiv1/Kconfig"
-source "drivers/video/rockchip/hdmi/rockchip-hdmiv2/Kconfig"
+       
+source "drivers/video/rockchip/hdmi/rk3288/Kconfig"
 
 config RK_HDMI_DEBUG
 		bool "Rockchip HDMI Debugging"

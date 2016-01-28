@@ -1,5 +1,5 @@
 /**
- * Copyright (C) ARM Limited 2013-2015. All rights reserved.
+ * Copyright (C) ARM Limited 2013-2014. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -14,7 +14,7 @@
 // Driver for the gator kernel module
 class KMod : public Driver {
 public:
-	KMod() : mIsMaliCapture(false) {}
+	KMod() {}
 	~KMod() {}
 
 	bool claimCounter(const Counter &counter) const;
@@ -22,11 +22,6 @@ public:
 	void setupCounter(Counter &counter);
 
 	int writeCounters(mxml_node_t *root) const;
-
-	bool isMaliCapture() const { return mIsMaliCapture; }
-
-private:
-	bool mIsMaliCapture;
 };
 
 #endif // KMOD_H

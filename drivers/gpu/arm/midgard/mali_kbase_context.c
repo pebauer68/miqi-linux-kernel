@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2010-2015 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -17,31 +17,26 @@
 
 
 
-/*
+/**
+ * @file mali_kbase_context.c
  * Base kernel context APIs
  */
 
 #include <mali_kbase.h>
 #include <mali_midg_regmap.h>
-#include <mali_kbase_instr.h>
 
 #define MEMPOOL_PAGES 16384
 
 
 /**
- * kbase_create_context() - Create a kernel base context.
- * @kbdev: Kbase device
- * @is_compat: Force creation of a 32-bit context
+ * @brief Create a kernel base context.
  *
  * Allocate and init a kernel base context.
- *
- * Return: new kbase context
  */
-struct kbase_context *
-kbase_create_context(struct kbase_device *kbdev, bool is_compat)
+kbase_context *kbase_create_context(kbase_device *kbdev)
 {
-	struct kbase_context *kctx;
-	int mali_err;
+	kbase_context *kctx;
+	mali_error mali_err;
 
 	KBASE_DEBUG_ASSERT(kbdev != NULL);
 
@@ -51,24 +46,19 @@ kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 	if (!kctx)
 		goto out;
 
-	/* creating a context is considered a disjoint event */
-	kbase_disjoint_event(kbdev);
-
 	kctx->kbdev = kbdev;
 	kctx->as_nr = KBASEP_AS_NR_INVALID;
-	kctx->is_compat = is_compat;
 #ifdef CONFIG_MALI_TRACE_TIMELINE
 	kctx->timeline.owner_tgid = task_tgid_nr(current);
 #endif
 	atomic_set(&kctx->setup_complete, 0);
 	atomic_set(&kctx->setup_in_progress, 0);
-	kctx->infinite_cache_active = 0;
+	kctx->keep_gpu_powered = MALI_FALSE;
 	spin_lock_init(&kctx->mm_update_lock);
 	kctx->process_mm = NULL;
 	atomic_set(&kctx->nonmapped_pages, 0);
-	kctx->slots_pullable = 0;
 
-	if (kbase_mem_allocator_init(&kctx->osalloc, MEMPOOL_PAGES, kctx->kbdev) != 0)
+	if (MALI_ERROR_NONE != kbase_mem_allocator_init(&kctx->osalloc, MEMPOOL_PAGES))
 		goto free_kctx;
 
 	kctx->pgd_allocator = &kctx->osalloc;
@@ -78,11 +68,11 @@ kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 		goto free_allocator;
 
 	mali_err = kbasep_js_kctx_init(kctx);
-	if (mali_err)
+	if (MALI_ERROR_NONE != mali_err)
 		goto free_jd;	/* safe to call kbasep_js_kctx_term  in this case */
 
 	mali_err = kbase_event_init(kctx);
-	if (mali_err)
+	if (MALI_ERROR_NONE != mali_err)
 		goto free_jd;
 
 	mutex_init(&kctx->reg_lock);
@@ -93,18 +83,18 @@ kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 #endif
 
 	mali_err = kbase_mmu_init(kctx);
-	if (mali_err)
+	if (MALI_ERROR_NONE != mali_err)
 		goto free_event;
 
 	kctx->pgd = kbase_mmu_alloc_pgd(kctx);
 	if (!kctx->pgd)
 		goto free_mmu;
 
-	if (kbase_mem_allocator_alloc(&kctx->osalloc, 1, &kctx->aliasing_sink_page) != 0)
+	if (MALI_ERROR_NONE != kbase_mem_allocator_alloc(&kctx->osalloc, 1, &kctx->aliasing_sink_page))
 		goto no_sink_page;
 
 	kctx->tgid = current->tgid;
-	kctx->pid = current->pid;
+	kctx->pid = current->pid; 
 	init_waitqueue_head(&kctx->event_queue);
 
 	kctx->cookies = KBASE_COOKIE_MASK;
@@ -119,19 +109,12 @@ kbase_create_context(struct kbase_device *kbdev, bool is_compat)
 	atomic_set(&kctx->timeline.jd_atoms_in_flight, 0);
 #endif
 
-	kctx->id = atomic_add_return(1, &(kbdev->ctx_num)) - 1;
-
-	mutex_init(&kctx->vinstr_cli_lock);
-
 	return kctx;
 
 no_region_tracker:
 no_sink_page:
 	kbase_mem_allocator_free(&kctx->osalloc, 1, &kctx->aliasing_sink_page, 0);
-	/* VM lock needed for the call to kbase_mmu_free_pgd */
-	kbase_gpu_vm_lock(kctx);
 	kbase_mmu_free_pgd(kctx);
-	kbase_gpu_vm_unlock(kctx);
 free_mmu:
 	kbase_mmu_term(kctx);
 free_event:
@@ -146,27 +129,26 @@ free_kctx:
 	vfree(kctx);
 out:
 	return NULL;
+
 }
-KBASE_EXPORT_SYMBOL(kbase_create_context);
+KBASE_EXPORT_SYMBOL(kbase_create_context)
 
 static void kbase_reg_pending_dtor(struct kbase_va_region *reg)
 {
 	dev_dbg(reg->kctx->kbdev->dev, "Freeing pending unmapped region\n");
-	kbase_mem_phy_alloc_put(reg->cpu_alloc);
-	kbase_mem_phy_alloc_put(reg->gpu_alloc);
+	kbase_mem_phy_alloc_put(reg->alloc);
 	kfree(reg);
 }
 
 /**
- * kbase_destroy_context - Destroy a kernel base context.
- * @kctx: Context to destroy
+ * @brief Destroy a kernel base context.
  *
- * Calls kbase_destroy_os_context() to free OS specific structures.
- * Will release all outstanding regions.
+ * Destroy a kernel base context. Calls kbase_destroy_os_context() to
+ * free OS specific structures. Will release all outstanding regions.
  */
-void kbase_destroy_context(struct kbase_context *kctx)
+void kbase_destroy_context(kbase_context *kctx)
 {
-	struct kbase_device *kbdev;
+	kbase_device *kbdev;
 	int pages;
 	unsigned long pending_regions_to_clean;
 
@@ -181,6 +163,13 @@ void kbase_destroy_context(struct kbase_context *kctx)
 	/* A suspend won't happen here, because we're in a syscall from a userspace
 	 * thread. */
 	kbase_pm_context_active(kbdev);
+
+	if (kbdev->hwcnt.kctx == kctx) {
+		/* disable the use of the hw counters if the app didn't use the API correctly or crashed */
+		KBASE_TRACE_ADD(kbdev, CORE_CTX_HWINSTR_TERM, kctx, NULL, 0u, 0u);
+		dev_warn(kbdev->dev, "The privileged process asking for instrumentation forgot to disable it " "before exiting. Will end instrumentation for them");
+		kbase_instr_hwcnt_disable(kctx);
+	}
 
 	kbase_jd_zap_context(kctx);
 	kbase_event_cleanup(kctx);
@@ -197,7 +186,6 @@ void kbase_destroy_context(struct kbase_context *kctx)
 	pending_regions_to_clean = (~kctx->cookies) & KBASE_COOKIE_MASK;
 	while (pending_regions_to_clean) {
 		unsigned int cookie = __ffs(pending_regions_to_clean);
-
 		BUG_ON(!kctx->pending_regions[cookie]);
 
 		kbase_reg_pending_dtor(kctx->pending_regions[cookie]);
@@ -222,38 +210,35 @@ void kbase_destroy_context(struct kbase_context *kctx)
 	if (pages != 0)
 		dev_warn(kbdev->dev, "%s: %d pages in use!\n", __func__, pages);
 
+	if (kctx->keep_gpu_powered) {
+		atomic_dec(&kbdev->keep_gpu_powered_count);
+		kbase_pm_context_idle(kbdev);
+	}
+
 	kbase_mem_allocator_term(&kctx->osalloc);
 	WARN_ON(atomic_read(&kctx->nonmapped_pages) != 0);
-
 	vfree(kctx);
 }
-KBASE_EXPORT_SYMBOL(kbase_destroy_context);
+KBASE_EXPORT_SYMBOL(kbase_destroy_context)
 
 /**
- * kbase_context_set_create_flags - Set creation flags on a context
- * @kctx: Kbase context
- * @flags: Flags to set
- *
- * Return: 0 on success
+ * Set creation flags on a context
  */
-int kbase_context_set_create_flags(struct kbase_context *kctx, u32 flags)
+mali_error kbase_context_set_create_flags(kbase_context *kctx, u32 flags)
 {
-	int err = 0;
-	struct kbasep_js_kctx_info *js_kctx_info;
-	unsigned long irq_flags;
-
+	mali_error err = MALI_ERROR_NONE;
+	kbasep_js_kctx_info *js_kctx_info;
 	KBASE_DEBUG_ASSERT(NULL != kctx);
 
 	js_kctx_info = &kctx->jctx.sched_info;
 
 	/* Validate flags */
 	if (flags != (flags & BASE_CONTEXT_CREATE_KERNEL_FLAGS)) {
-		err = -EINVAL;
+		err = MALI_ERROR_FUNCTION_FAILED;
 		goto out;
 	}
 
 	mutex_lock(&js_kctx_info->ctx.jsctx_mutex);
-	spin_lock_irqsave(&kctx->kbdev->js_data.runpool_irq.lock, irq_flags);
 
 	/* Translate the flags */
 	if ((flags & BASE_CONTEXT_SYSTEM_MONITOR_SUBMIT_DISABLED) == 0)
@@ -265,10 +250,8 @@ int kbase_context_set_create_flags(struct kbase_context *kctx, u32 flags)
 	/* Latch the initial attributes into the Job Scheduler */
 	kbasep_js_ctx_attr_set_initial_attrs(kctx->kbdev, kctx);
 
-	spin_unlock_irqrestore(&kctx->kbdev->js_data.runpool_irq.lock,
-			irq_flags);
 	mutex_unlock(&js_kctx_info->ctx.jsctx_mutex);
  out:
 	return err;
 }
-KBASE_EXPORT_SYMBOL(kbase_context_set_create_flags);
+KBASE_EXPORT_SYMBOL(kbase_context_set_create_flags)

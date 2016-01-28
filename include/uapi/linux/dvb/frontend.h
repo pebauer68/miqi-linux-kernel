@@ -28,11 +28,16 @@
 
 #include <linux/types.h>
 
+
+#define __DVB_CORE__
+
 typedef enum fe_type {
 	FE_QPSK,
 	FE_QAM,
 	FE_OFDM,
-	FE_ATSC
+	FE_ATSC,
+	FE_ISDB_ONESEG,
+	FE_ISDB_FULLSEG,	
 } fe_type_t;
 
 

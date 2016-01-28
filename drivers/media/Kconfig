@@ -160,6 +160,8 @@ comment "Supported FireWire (IEEE 1394) Adapters"
 	depends on DVB_CORE && FIREWIRE
 source "drivers/media/firewire/Kconfig"
 
+source "drivers/media/rkdtv/Kconfig"
+
 # Common driver options
 source "drivers/media/common/Kconfig"
 
@@ -199,6 +201,5 @@ source "drivers/media/i2c/Kconfig"
 source "drivers/media/tuners/Kconfig"
 source "drivers/media/dvb-frontends/Kconfig"
 source "drivers/media/video/rk_camsys/Kconfig"
-source "drivers/media/video/Kconfig"
 
 endif # MEDIA_SUPPORT

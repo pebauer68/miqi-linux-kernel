@@ -862,11 +862,11 @@
 						#clock-cells = <0>;
 					};
 
-					ehci1phy_12m_div: ehci1phy_12m_div {
+					hsicphy_12m_div: hsicphy_12m_div {
 						compatible = "rockchip,rk3188-div-con";
 						rockchip,bits = <8 6>;
-						clocks = <&ehci1phy_480m>;
-						clock-output-names = "ehci1phy_12m_div";
+						clocks = <&hsicphy_480m>;
+						clock-output-names = "hsicphy_12m_div";
 						rockchip,div-type = <CLK_DIVIDER_PLUS_ONE>;
 						#clock-cells = <0>;
 					};
@@ -1459,7 +1459,7 @@
 					hclk_vio: hclk_vio_div {
 						compatible = "rockchip,rk3188-div-con";
 						rockchip,bits = <8 5>;
-						clocks = <&clk_gates15 11>;
+						clocks = <&aclk_vio0>;
 						clock-output-names = "hclk_vio";
 						rockchip,div-type = <CLK_DIVIDER_PLUS_ONE>;
 						#clock-cells = <0>;
@@ -1483,19 +1483,19 @@
 					#address-cells = <1>;
 					#size-cells = <1>;
 
-					ehci1phy_480m: ehci1phy_480m_mux {
+					hsicphy_480m: hsicphy_480m_mux {
 						compatible = "rockchip,rk3188-mux-con";
 						rockchip,bits = <0 2>;
 						clocks = <&dummy_cpll>, <&clk_gpll>, <&usbphy_480m>;
-						clock-output-names = "ehci1phy_480m";
+						clock-output-names = "hsicphy_480m";
 						#clock-cells = <0>;
 					};
 
-					ehci1phy_12m: ehci1phy_12m_mux {
+					hsicphy_12m: hsicphy_12m_mux {
 						compatible = "rockchip,rk3188-mux-con";
 						rockchip,bits = <2 1>;
-						clocks = <&clk_gates13 9>, <&ehci1phy_12m_div>;
-						clock-output-names = "ehci1phy_12m";
+						clocks = <&clk_gates13 9>, <&hsicphy_12m_div>;
+						clock-output-names = "hsicphy_12m";
 						#clock-cells = <0>;
 					};
 
@@ -2249,7 +2249,7 @@
 						<&aclk_vio1>,		<&dclk_lcdc1>,
 
 						<&clk_rga>,			<&aclk_rga>,
-						<&ehci1phy_480m>,		<&clk_cif_pll>,
+						<&hsicphy_480m>,		<&clk_cif_pll>,
 
 						<&dummy>,		<&clk_vepu>,
 						<&dummy>,		<&clk_vdpu>,
@@ -2262,7 +2262,7 @@
 						"aclk_vio1",		"dclk_lcdc1",
 
 						"clk_rga",		"aclk_rga",
-						"ehci1phy_480m",		"clk_cif_pll",
+						"hsicphy_480m",		"clk_cif_pll",
 
 						/*Not use hclk_vpu_gate tmp, fixme*/
 						"reserved",		"clk_vepu",
@@ -2368,7 +2368,7 @@
 						"g_pclk_uart0",		"g_pclk_uart1",
 						"reserved",		"g_pclk_uart3",
 
-						"g_pclk_uart4",		"g_pclk_i2c1",
+						"g_pclk_uart4",		"g_pclk_i2c2",
 						"g_pclk_i2c3",		"g_pclk_i2c4";
                                             rockchip,suspend-clkgating-setting=<0x0003 0x0003>;
 
@@ -2398,7 +2398,7 @@
 						"g_hclk_otg0",		"g_pmu_hclk_otg0",
 						"g_hclk_host0",		"g_hclk_host1",
 
-						"g_hclk_ehci1",		"g_hclk_usb_peri",
+						"g_hclk_hsic",		"g_hclk_usb_peri",
 						"g_hp_ahb_arbi",		"g_aclk_peri_niu",
 
 						"g_h_emem_peri",		"g_hclk_mem_peri",
@@ -2492,7 +2492,7 @@
 
 					clock-output-names =
 						"g_pclk_pwm",		"g_pclk_timer",
-						"g_pclk_i2c0",		"g_pclk_i2c2",
+						"g_pclk_i2c0",		"g_pclk_i2c1",
 
 						"g_aclk_intmem",		"g_clk_intmem0",
 						"g_clk_intmem1",		"g_clk_intmem2",
@@ -2537,7 +2537,7 @@
 
 						"reserved",		"reserved",
 						"reserved",		"reserved";
-                                               rockchip,suspend-clkgating-setting=<0x0033 0x0033>;
+                                               rockchip,suspend-clkgating-setting=<0x0833 0x0833>;
 
 					#clock-cells = <1>;
 				};
@@ -2598,7 +2598,7 @@
 						"clk_otgphy0",		"clk_otgphy1",
 						"clk_otgphy2",		"clk_otg_adp",
 
-						"g_clk_c2c_host",		"g_clk_ehci1_12m",
+						"g_clk_c2c_host",		"g_clk_hsic_12m",
 						"g_clk_lcdc_pwm0",		"g_clk_lcdc_pwm1",
 
 						"g_clk_wifi",		"aclk_hevc",
@@ -2648,28 +2648,28 @@
 					reg = <0x019c 0x4>;
 					clocks =
 						<&aclk_rga>,		<&hclk_vio>,
-						<&clk_gates15 11>,	<&hclk_vio>,
+						<&aclk_vio0>,		<&hclk_vio>,
 
-						<&dummy>,		<&clk_gates15 11>,
-						<&hclk_vio>,		<&clk_gates15 12>,
-
-						<&hclk_vio>,		<&dummy>,
 						<&dummy>,		<&aclk_vio0>,
+						<&hclk_vio>,		<&aclk_vio1>,
+
+						<&hclk_vio>,		<&hclk_vio>,
+						<&hclk_vio>,		<&aclk_vio0>,
 
 						<&aclk_vio1>,		<&aclk_rga>,
-						<&clk_gates15 11>,	<&hclk_vio>;
+						<&aclk_vio0>,		<&hclk_vio>;
 
 					clock-output-names =
-						"reserved", /*"g_aclk_rga"*/	"g_hclk_rga",
+						"reserved", /*"g_aclk_rga",*/	"g_hclk_rga",
 						"g_aclk_iep",		"g_hclk_iep",
 
 						"g_aclk_lcdc_iep",		"g_aclk_lcdc0",
 						"g_hclk_lcdc0",		"g_aclk_lcdc1",
 
-						"g_hclk_lcdc1",		"reserved", /* "g_h_vio_ahb" */
-						"reserved",/*"g_hclk_vio_niu"*/		"g_aclk_vio0_niu",
+						"g_hclk_lcdc1",		"g_h_vio_ahb",
+						"g_hclk_vio_niu",		"g_aclk_vio0_niu",
 
-						"g_aclk_vio1_niu",		"reserved",/*"g_aclk_rga_niu"*/
+						"g_aclk_vio1_niu",		"reserved",/*"g_aclk_rga_niu",*/
 						"g_aclk_vip",		"g_hclk_vip";
                                                 rockchip,suspend-clkgating-setting=<0x0 0x0>;
 
@@ -2681,13 +2681,13 @@
 					reg = <0x01a0 0x4>;
 					clocks =
 						<&pclkin_cif>,		<&hclk_vio>,
-						<&clk_gates15 12>,	<&pclkin_isp>,
+						<&aclk_vio1>,		<&pclkin_isp>,
 
 						<&hclk_vio>,		<&hclk_vio>,
 						<&hclk_vio>,		<&hclk_vio>,
 
 						<&hclk_vio>,		<&hclk_vio>,
-						<&dummy>,		<&dummy>,
+						<&hclk_vio>,		<&hclk_vio>,
 
 						<&dummy>,		<&dummy>,
 						<&dummy>,		<&dummy>;
@@ -2700,7 +2700,7 @@
 						"g_p_mipi_csi",		"g_pclk_lvds_phy",
 
 						"g_pclk_edp_ctrl",		"g_p_hdmi_ctrl",
-						"reserved",		"reserved", /* bit10:"g_hclk_vio2_h2p" bit11: "g_pclk_vio2_h2p" */
+						"g_hclk_vio2_h2p",		"g_pclk_vio2_h2p",
 
 						"reserved",		"reserved",
 						"reserved",		"reserved";

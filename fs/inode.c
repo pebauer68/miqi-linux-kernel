@@ -1837,18 +1837,14 @@ EXPORT_SYMBOL(inode_init_owner);
  * inode_owner_or_capable - check current task permissions to inode
  * @inode: inode being checked
  *
- * Return true if current either has CAP_FOWNER in a namespace with the
- * inode owner uid mapped, or owns the file.
+ * Return true if current either has CAP_FOWNER to the inode, or
+ * owns the file.
  */
 bool inode_owner_or_capable(const struct inode *inode)
 {
-	struct user_namespace *ns;
-
 	if (uid_eq(current_fsuid(), inode->i_uid))
 		return true;
-
-	ns = current_user_ns();
-	if (ns_capable(ns, CAP_FOWNER) && kuid_has_mapping(ns, inode->i_uid))
+	if (inode_capable(inode, CAP_FOWNER))
 		return true;
 	return false;
 }
@@ -1887,3 +1883,16 @@ void inode_dio_wait(struct inode *inode)
 }
 EXPORT_SYMBOL(inode_dio_wait);
 
+/*
+ * inode_dio_done - signal finish of a direct I/O requests
+ * @inode: inode the direct I/O happens on
+ *
+ * This is called once we've finished processing a direct I/O request,
+ * and is used to wake up callers waiting for direct I/O to be quiesced.
+ */
+void inode_dio_done(struct inode *inode)
+{
+	if (atomic_dec_and_test(&inode->i_dio_count))
+		wake_up_bit(&inode->i_state, __I_DIO_WAKEUP);
+}
+EXPORT_SYMBOL(inode_dio_done);

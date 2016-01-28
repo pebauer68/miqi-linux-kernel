@@ -262,25 +262,6 @@ config ACT8846_SUPPORT_RESET
 	help
 	  Support short press key to restart.
 
-config REGULATOR_ACT8931
-	tristate "Active Semi ACT8931 PMIC regulators"
-        depends on I2C
-        help
-          Support the voltage and current regulators of the ACT8931 series of PMIC devices.
-
-config REGULATOR_RT5025
-	bool "Richtek RT5025 PMIC Voltage regulstors"
-	depends on MFD_RT5025
-	default n
-	help
-	  This driver supports voltage regulator in RT5025 PMIC chips.
-
-config REGULATOR_RT5036
-	bool "RT5036 regulator support"
-	depends on MFD_RT5036
-	help
-	  This driver support voltage regulator in Richtek RT5036.
-
 config ROCKCHIP_PWM_REGULATOR
 	tristate "rockchip pwm voltage regulator for discrete dcdc or ldo"
 	help
@@ -288,12 +269,6 @@ config ROCKCHIP_PWM_REGULATOR
 
 config REGULATOR_SYR82X
 	tristate "SYR82X DCDC SUPPORT REGULATOR"
-	depends on I2C
-	help
-	  Support the voltage and current regulators of the SYR82X series of DCDC devices.
-
-config REGULATOR_ETA3555
-	tristate "ETA3555 DCDC SUPPORT REGULATOR"
 	depends on I2C
 	help
 	  Support the voltage and current regulators of the SYR82X series of DCDC devices.

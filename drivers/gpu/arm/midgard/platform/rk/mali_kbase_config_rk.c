@@ -13,8 +13,9 @@
  *
  */
 
-// #define ENABLE_DEBUG_LOG
-#include "custom_log.h"
+
+
+
 
 #include <linux/ioport.h>
 #include <mali_kbase.h>
@@ -27,17 +28,6 @@
 #include <platform/rk/mali_kbase_dvfs.h>
 #include <linux/pm_runtime.h>
 #include <linux/suspend.h>
-#include <linux/reboot.h>
-/**
- * @file mali_kbase_config_rk.c
- * 对 platform_config_of_rk 的具体实现.
- * 
- * mali_device_driver 包含两部分 : 
- *      .DP : platform_dependent_part_in_mdd : 依赖 platform 部分, 源码在 <mdd_src_dir>/platform/<platform_name> 目录下.
- *			在 mali_device_driver 内部, 记为 platform_dependent_part.
- *      .DP : common_parts_in_mdd : arm 实现的通用的部分, 源码在 <mdd_src_dir> 目录下.
- *			在 mali_device_driver 内部, 记为 common_parts.
- */
 
 int get_cpu_clock_speed(u32 *cpu_clock);
 
@@ -87,19 +77,6 @@ static int mali_pm_notifier(struct notifier_block *nb,unsigned long event,void* 
 static struct notifier_block mali_pm_nb = {
 	.notifier_call = mali_pm_notifier
 };
-static int mali_reboot_notifier_event(struct notifier_block *this, unsigned long event, void *ptr)
-{
-
-	pr_info("%s enter\n",__func__);
-	if (kbase_platform_dvfs_enable(false, MALI_DVFS_CURRENT_FREQ)!= MALI_TRUE)
-		return -EPERM;
-	pr_info("%s exit\n",__func__);
-	return NOTIFY_OK;
-}
-
-static struct notifier_block mali_reboot_notifier = {
-	.notifier_call = mali_reboot_notifier_event,
-};
 
 #ifndef CONFIG_OF
 static kbase_io_resources io_resources = {
@@ -111,7 +88,6 @@ static kbase_io_resources io_resources = {
 			     .end = 0xFC010000 + (4096 * 5) - 1}
 };
 #endif
-
 int get_cpu_clock_speed(u32 *cpu_clock)
 {
 #if 0
@@ -132,18 +108,16 @@ static int mali_pm_notifier(struct notifier_block *nb,unsigned long event,void* 
 	switch (event) {
 		case PM_SUSPEND_PREPARE:
 #ifdef CONFIG_MALI_MIDGARD_DVFS
-			/*
-			pr_info("%s,PM_SUSPEND_PREPARE\n",__func__);
-			*/
+			/*if (kbase_platform_dvfs_enable(false, MALI_DVFS_BL_CONFIG_FREQ)!= MALI_TRUE)*/
+			/*printk("%s,PM_SUSPEND_PREPARE\n",__func__);*/
 			if (kbase_platform_dvfs_enable(false, p_mali_dvfs_infotbl[0].clock)!= MALI_TRUE)
 				err = NOTIFY_BAD;
 #endif
 			break;
 		case PM_POST_SUSPEND:
 #ifdef CONFIG_MALI_MIDGARD_DVFS
-			/*
-			pr_info("%s,PM_POST_SUSPEND\n",__func__);
-			*/
+			/*if (kbase_platform_dvfs_enable(true, MALI_DVFS_START_FREQ)!= MALI_TRUE)*/
+			/*printk("%s,PM_POST_SUSPEND\n",__func__);*/
 			if (kbase_platform_dvfs_enable(true, p_mali_dvfs_infotbl[0].clock)!= MALI_TRUE)
 				err = NOTIFY_BAD;
 #endif
@@ -157,28 +131,22 @@ static int mali_pm_notifier(struct notifier_block *nb,unsigned long event,void* 
 /*
   rk3288 hardware specific initialization
  */
-int kbase_platform_rk_init(struct kbase_device *kbdev)
+mali_bool kbase_platform_rk_init(kbase_device *kbdev)
 {
  	if(MALI_ERROR_NONE == kbase_platform_init(kbdev))
  	{
 		if (register_pm_notifier(&mali_pm_nb)) {
-                        E("fail to register pm_notifier.");
-			return -1;
+			return MALI_FALSE;
 		}
-		
-		pr_info("%s,register_reboot_notifier\n",__func__);
-		register_reboot_notifier(&mali_reboot_notifier);
- 		return 0;
+ 		return MALI_TRUE;
  	}
-        
-        E("fail to init platform.");
-	return -1;
+	return MALI_FALSE;
 }
 
 /*
  rk3288  hardware specific termination
 */
-void kbase_platform_rk_term(struct kbase_device *kbdev)
+void kbase_platform_rk_term(kbase_device *kbdev)
 {
 	unregister_pm_notifier(&mali_pm_nb);
 #ifdef CONFIG_MALI_MIDGARD_DEBUG_SYS
@@ -187,14 +155,13 @@ void kbase_platform_rk_term(struct kbase_device *kbdev)
 	kbase_platform_term(kbdev);
 }
 
-struct kbase_platform_funcs_conf platform_funcs = 
-{
+kbase_platform_funcs_conf platform_funcs = {
 	.platform_init_func = &kbase_platform_rk_init,
 	.platform_term_func = &kbase_platform_rk_term,
 };
 
 #ifdef CONFIG_MALI_MIDGARD_RT_PM
-static int pm_callback_power_on(struct kbase_device *kbdev)
+static int pm_callback_power_on(kbase_device *kbdev)
 {
 	int result;
 	int ret_val;
@@ -202,30 +169,19 @@ static int pm_callback_power_on(struct kbase_device *kbdev)
 	struct rk_context *platform;
 	platform = (struct rk_context *)kbdev->platform_context;
 
-	/* 若 mali_device 是 suspended 的, 则... */
 	if (pm_runtime_status_suspended(dev))
-	{
-		/* 预置返回 1, 表征 gpu_state 可能已经 lost 了. */
 		ret_val = 1;
-	}
 	else
-	{
 		ret_val = 0;
-	}
 
 	if(dev->power.disable_depth > 0) {
 		if(platform->cmu_pmu_status == 0)
-		{
-			/* 使能 gpu_power_domain 和 clk_of_gpu_dvfs_node. */
 			kbase_platform_cmu_pmu_control(kbdev, 1);
-		}
 		return ret_val;
 	}
-
 	result = pm_runtime_resume(dev);
 
-	// if (result < 0 && result == -EAGAIN)
-	if ( -EAGAIN == result )
+	if (result < 0 && result == -EAGAIN)
 		kbase_platform_cmu_pmu_control(kbdev, 1);
 	else if (result < 0)
 		printk(KERN_ERR "pm_runtime_get_sync failed (%d)\n", result);
@@ -233,16 +189,15 @@ static int pm_callback_power_on(struct kbase_device *kbdev)
 	return ret_val;
 }
 
-static void pm_callback_power_off(struct kbase_device *kbdev)
+static void pm_callback_power_off(kbase_device *kbdev)
 {
 	struct device *dev = kbdev->dev;
 	pm_schedule_suspend(dev, RUNTIME_PM_DELAY_TIME);
 }
 
-int kbase_device_runtime_init(struct kbase_device *kbdev)
+mali_error kbase_device_runtime_init(struct kbase_device *kbdev)
 {
 	pm_suspend_ignore_children(kbdev->dev, true);
-	/* 对 mali_device 使能 runtime_pm. */
 	pm_runtime_enable(kbdev->dev);
 #ifdef CONFIG_MALI_MIDGARD_DEBUG_SYS
 	if (kbase_platform_create_sysfs_file(kbdev->dev))
@@ -256,33 +211,20 @@ void kbase_device_runtime_disable(struct kbase_device *kbdev)
 	pm_runtime_disable(kbdev->dev);
 }
 
-static int pm_callback_runtime_on(struct kbase_device *kbdev)
+static int pm_callback_runtime_on(kbase_device *kbdev)
 {
 #ifdef CONFIG_MALI_MIDGARD_DVFS	
 	struct rk_context *platform = (struct rk_context *)kbdev->platform_context;
-	unsigned long flags;
-	unsigned int clock;
 #endif
-
 	kbase_platform_power_on(kbdev);
 
 	kbase_platform_clock_on(kbdev);
 #ifdef CONFIG_MALI_MIDGARD_DVFS
 	if (platform->dvfs_enabled) {
-		if(platform->gpu_in_touch) {
-			clock = p_mali_dvfs_infotbl[MALI_DVFS_STEP-1].clock;
-			spin_lock_irqsave(&platform->gpu_in_touch_lock, flags);
-			platform->gpu_in_touch = false;
-			spin_unlock_irqrestore(&platform->gpu_in_touch_lock, flags);
-		} else {
-			clock = MALI_DVFS_CURRENT_FREQ;
-		}
-		/*
-		pr_info("%s,clock = %d\n",__func__,clock);
-		*/
-		if (kbase_platform_dvfs_enable(true, clock)!= MALI_TRUE)
+		/*if (kbase_platform_dvfs_enable(true, MALI_DVFS_START_FREQ)!= MALI_TRUE)*/
+		/*printk("%s\n",__func__);*/
+		if (kbase_platform_dvfs_enable(true, p_mali_dvfs_infotbl[MALI_DVFS_STEP-1].clock)!= MALI_TRUE)
 			return -EPERM;
-
 	} else {
 		if (kbase_platform_dvfs_enable(false, MALI_DVFS_CURRENT_FREQ)!= MALI_TRUE)
 			return -EPERM;
@@ -291,11 +233,10 @@ static int pm_callback_runtime_on(struct kbase_device *kbdev)
 	return 0;
 }
 
-static void pm_callback_runtime_off(struct kbase_device *kbdev)
+static void pm_callback_runtime_off(kbase_device *kbdev)
 {
 #ifdef CONFIG_MALI_MIDGARD_DVFS	
 	struct rk_context *platform = (struct rk_context *)kbdev->platform_context;
-	unsigned long flags;
 #endif
 
 	kbase_platform_clock_off(kbdev);
@@ -306,14 +247,11 @@ static void pm_callback_runtime_off(struct kbase_device *kbdev)
 		/*printk("%s\n",__func__);*/
 		if (kbase_platform_dvfs_enable(false, p_mali_dvfs_infotbl[0].clock)!= MALI_TRUE)
 			printk("[err] disabling dvfs is faled\n");
-		spin_lock_irqsave(&platform->gpu_in_touch_lock, flags);
-		platform->gpu_in_touch = false;
-		spin_unlock_irqrestore(&platform->gpu_in_touch_lock, flags);
 	}
 #endif
 }
 
-struct kbase_pm_callback_conf pm_callbacks = {
+static kbase_pm_callback_conf pm_callbacks = {
 	.power_on_callback = pm_callback_power_on,
 	.power_off_callback = pm_callback_power_off,
 #ifdef CONFIG_PM_RUNTIME
@@ -332,6 +270,148 @@ struct kbase_pm_callback_conf pm_callbacks = {
 };
 #endif
 
+
+/* Please keep table config_attributes in sync with config_attributes_hw_issue_8408 */
+static kbase_attribute config_attributes[] = {
+#if 0	
+	{
+	 KBASE_CONFIG_ATTR_MEMORY_PER_PROCESS_LIMIT,
+	 KBASE_VE_MEMORY_PER_PROCESS_LIMIT},
+#endif
+#ifdef CONFIG_UMP
+	{
+	 KBASE_CONFIG_ATTR_UMP_DEVICE,
+	 KBASE_VE_UMP_DEVICE},
+#endif				/* CONFIG_UMP */
+#ifdef CONFIG_MALI_MIDGARD_RT_PM
+	{
+	 KBASE_CONFIG_ATTR_POWER_MANAGEMENT_CALLBACKS,
+	 (uintptr_t)&pm_callbacks},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_MEMORY_OS_SHARED_MAX,
+	 KBASE_VE_MEMORY_OS_SHARED_MAX},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_MEMORY_OS_SHARED_PERF_GPU,
+	 KBASE_VE_MEMORY_OS_SHARED_PERF_GPU},
+#endif	
+	{
+	 KBASE_CONFIG_ATTR_PLATFORM_FUNCS,
+	 (uintptr_t) &platform_funcs},
+	
+	{
+	 KBASE_CONFIG_ATTR_GPU_FREQ_KHZ_MAX,
+	 KBASE_VE_GPU_FREQ_KHZ_MAX},
+
+	{
+	 KBASE_CONFIG_ATTR_GPU_FREQ_KHZ_MIN,
+	 KBASE_VE_GPU_FREQ_KHZ_MIN},
+
+#ifdef CONFIG_MALI_DEBUG
+/* Use more aggressive scheduling timeouts in debug builds for testing purposes */
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_JS_SCHEDULING_TICK_NS,
+	 KBASE_VE_JS_SCHEDULING_TICK_NS_DEBUG},
+
+	{
+	 KBASE_CONFIG_ATTR_JS_SOFT_STOP_TICKS,
+	 KBASE_VE_JS_SOFT_STOP_TICKS_DEBUG},
+
+	{
+	 KBASE_CONFIG_ATTR_JS_HARD_STOP_TICKS_SS,
+	 KBASE_VE_JS_HARD_STOP_TICKS_SS_DEBUG},
+
+	{
+	 KBASE_CONFIG_ATTR_JS_HARD_STOP_TICKS_NSS,
+	 KBASE_VE_JS_HARD_STOP_TICKS_NSS_DEBUG},
+
+	{
+	 KBASE_CONFIG_ATTR_JS_RESET_TICKS_SS,
+	 KBASE_VE_JS_RESET_TICKS_SS_DEBUG},
+
+	{
+	 KBASE_CONFIG_ATTR_JS_RESET_TICKS_NSS,
+	 KBASE_VE_JS_RESET_TICKS_NSS_DEBUG},
+#endif
+#else				/* CONFIG_MALI_DEBUG */
+/* In release builds same as the defaults but scaled for 5MHz FPGA */
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_JS_SCHEDULING_TICK_NS,
+	 KBASE_VE_JS_SCHEDULING_TICK_NS},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_JS_SOFT_STOP_TICKS,
+	 KBASE_VE_JS_SOFT_STOP_TICKS},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_JS_HARD_STOP_TICKS_SS,
+	 KBASE_VE_JS_HARD_STOP_TICKS_SS},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_JS_HARD_STOP_TICKS_NSS,
+	 KBASE_VE_JS_HARD_STOP_TICKS_NSS},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_JS_RESET_TICKS_SS,
+	 KBASE_VE_JS_RESET_TICKS_SS},
+#endif
+#if 0 
+	{
+	 KBASE_CONFIG_ATTR_JS_RESET_TICKS_NSS,
+	 KBASE_VE_JS_RESET_TICKS_NSS},
+#endif
+#endif				/* CONFIG_MALI_DEBUG */
+#if 1
+	{
+	 KBASE_CONFIG_ATTR_JS_RESET_TIMEOUT_MS,
+	 KBASE_VE_JS_RESET_TIMEOUT_MS},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_JS_CTX_TIMESLICE_NS,
+	 KBASE_VE_JS_CTX_TIMESLICE_NS},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_CPU_SPEED_FUNC,
+	 KBASE_VE_CPU_SPEED_FUNC},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_SECURE_BUT_LOSS_OF_PERFORMANCE,
+	 KBASE_VE_SECURE_BUT_LOSS_OF_PERFORMANCE},
+#endif
+#if 0
+	{
+	 KBASE_CONFIG_ATTR_GPU_IRQ_THROTTLE_TIME_US,
+	 20},
+#endif
+	{
+	 KBASE_CONFIG_ATTR_END,
+	 0}
+};
+
+static kbase_platform_config rk_platform_config = {
+	.attributes = config_attributes,
+#ifndef CONFIG_OF
+	.io_resources = &io_resources
+#endif
+};
+#if 1
+kbase_platform_config *kbase_get_platform_config(void)
+{
+	return &rk_platform_config;
+}
+#endif
 int kbase_platform_early_init(void)
 {
 	/* Nothing needed at this stage */

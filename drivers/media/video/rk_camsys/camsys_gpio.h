@@ -1,7 +1,8 @@
 #ifndef __RKCAMSYS_GPIO_H__
 #define __RKCAMSYS_GPIO_H__
 
-//#include <asm/gpio.h>
+//#include <mach/gpio.h>
+#include <asm/gpio.h>
 #if defined(CONFIG_ARCH_ROCKCHIP)
 #define RK30_PIN0_PA0 (0)
 #define NUM_GROUP 	(32)
@@ -55,11 +56,7 @@ static inline unsigned int camsys_gpio_group(unsigned char *io_name)
         group = 5;      
     } else if (strstr(io_name,"PIN6")) {
         group = 6;      
-    } else if (strstr(io_name,"PIN7")) {
-        group = 7;      
-    } else if (strstr(io_name,"PIN8")) {
-        group = 8;      
-    }  
+    } 
 
     return group;
 }

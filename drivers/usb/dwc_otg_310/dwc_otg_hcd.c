@@ -303,6 +303,7 @@ static int32_t dwc_otg_hcd_disconnect_cb(void *p)
 	 */
 	dwc_otg_hcd->flags.b.port_connect_status_change = 1;
 	dwc_otg_hcd->flags.b.port_connect_status = 0;
+	dwc_otg_hcd->flags.b.port_suspend_connect_status = 0;
 
 	/*
 	 * Shutdown any transfers in process by clearing the Tx FIFO Empty
@@ -480,23 +481,22 @@ void dwc_otg_hcd_stop(dwc_otg_hcd_t *hcd)
 	pldata = hcd->core_if->otg_dev->pldata;
 	DWC_DEBUGPL(DBG_HCD, "DWC OTG HCD STOP\n");
 
-	/* Turn off all host-specific interrupts. */
-	dwc_otg_disable_host_interrupts(hcd->core_if);
-
-	/*
-	 * Set status flags for the hub driver.
-	 */
-	hcd->flags.b.port_connect_status_change = 1;
-	hcd->flags.b.port_connect_status = 0;
-
 	/*
 	 * The root hub should be disconnected before this function is called.
 	 * The disconnect will clear the QTD lists (via ..._hcd_urb_dequeue)
 	 * and the QH lists (via ..._hcd_endpoint_disable).
 	 */
 	DWC_SPINLOCK_IRQSAVE(hcd->lock, &flags);
+	/* Turn off all host-specific interrupts. */
+	dwc_otg_disable_host_interrupts(hcd->core_if);
 	kill_all_urbs(hcd);
 	DWC_SPINUNLOCK_IRQRESTORE(hcd->lock, flags);
+
+	/*
+	 * Set status flags for the hub driver.
+	 */
+	hcd->flags.b.port_connect_status_change = 1;
+	hcd->flags.b.port_connect_status = 0;
 
 	/* Turn off the vbus power */
 	DWC_PRINTF("PortPower off\n");

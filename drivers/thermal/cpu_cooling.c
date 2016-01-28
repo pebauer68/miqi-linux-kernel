@@ -167,19 +167,12 @@ static int get_property(unsigned int cpu, unsigned long input,
 			continue;
 
 		/* get the frequency order */
-		if (freq != CPUFREQ_ENTRY_INVALID && descend == -1)
+		if (freq != CPUFREQ_ENTRY_INVALID && descend != -1)
 			descend = !!(freq > table[i].frequency);
 
 		freq = table[i].frequency;
 		max_level++;
 	}
-
-	/* No valid cpu frequency entry */
-	if (max_level == 0)
-		return -EINVAL;
-
-	/* max_level is an index, not a counter */
-	max_level--;
 
 	/* get max level */
 	if (property == GET_MAXL) {
@@ -188,7 +181,7 @@ static int get_property(unsigned int cpu, unsigned long input,
 	}
 
 	if (property == GET_FREQ)
-		level = descend ? input : (max_level - input);
+		level = descend ? input : (max_level - input - 1);
 
 	for (i = 0, j = 0; table[i].frequency != CPUFREQ_TABLE_END; i++) {
 		/* ignore invalid entry */
@@ -204,7 +197,7 @@ static int get_property(unsigned int cpu, unsigned long input,
 
 		if (property == GET_LEVEL && (unsigned int)input == freq) {
 			/* get level by frequency */
-			*output = descend ? j : (max_level - j);
+			*output = descend ? j : (max_level - j - 1);
 			return 0;
 		}
 		if (property == GET_FREQ && level == j) {
@@ -329,8 +322,6 @@ static int cpufreq_thermal_notifier(struct notifier_block *nb,
 
 	if (cpumask_test_cpu(policy->cpu, &notify_device->allowed_cpus))
 		max_freq = notify_device->cpufreq_val;
-	else
-		return 0;
 
 	/* Never exceed user_policy.max */
 	if (max_freq > policy->user_policy.max)
@@ -482,7 +473,7 @@ __cpufreq_cooling_register(struct device_node *np,
 	if (IS_ERR(cool_dev)) {
 		release_idr(&cpufreq_idr, cpufreq_dev->id);
 		kfree(cpufreq_dev);
-		return cool_dev;
+		return ERR_PTR(-EINVAL);
 	}
 	cpufreq_dev->cool_dev = cool_dev;
 	cpufreq_dev->cpufreq_state = 0;
@@ -549,12 +540,8 @@ EXPORT_SYMBOL_GPL(of_cpufreq_cooling_register);
  */
 void cpufreq_cooling_unregister(struct thermal_cooling_device *cdev)
 {
-	struct cpufreq_cooling_device *cpufreq_dev;
+	struct cpufreq_cooling_device *cpufreq_dev = cdev->devdata;
 
-	if (!cdev)
-		return;
-
-	cpufreq_dev = cdev->devdata;
 	mutex_lock(&cooling_cpufreq_lock);
 	cpufreq_dev_count--;
 

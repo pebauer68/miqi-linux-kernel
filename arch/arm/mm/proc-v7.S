@@ -202,6 +202,7 @@ __v7_pj4b_setup:
 /* Auxiliary Debug Modes Control 1 Register */
 #define PJ4B_STATIC_BP (1 << 2) /* Enable Static BP */
 #define PJ4B_INTER_PARITY (1 << 8) /* Disable Internal Parity Handling */
+#define PJ4B_BCK_OFF_STREX (1 << 5) /* Enable the back off of STREX instr */
 #define PJ4B_CLEAN_LINE (1 << 16) /* Disable data transfer for clean line */
 
 /* Auxiliary Debug Modes Control 2 Register */
@@ -224,6 +225,7 @@ __v7_pj4b_setup:
 	/* Auxiliary Debug Modes Control 1 Register */
 	mrc	p15, 1,	r0, c15, c1, 1
 	orr     r0, r0, #PJ4B_CLEAN_LINE
+	orr     r0, r0, #PJ4B_BCK_OFF_STREX
 	orr     r0, r0, #PJ4B_INTER_PARITY
 	bic	r0, r0, #PJ4B_STATIC_BP
 	mcr	p15, 1,	r0, c15, c1, 1
@@ -336,14 +338,6 @@ __v7_setup:
 	mrceq	p15, 0, r10, c15, c0, 1		@ read diagnostic register
 	orreq	r10, r10, #1 << 12		@ set bit #12
 	mcreq	p15, 0, r10, c15, c0, 1		@ write diagnostic register
-	isb
-#endif
-#ifdef CONFIG_ARM_ERRATA_821420
-	teq	r6, #0x00			@ present in r0p0
-	teqne	r6, #0x01			@ present in r0p1
-	mrceq	p15, 0, r10, c15, c0, 2
-	orreq	r10, r10, #1 << 1
-	mcreq	p15, 0, r10, c15, c0, 2
 	isb
 #endif
 

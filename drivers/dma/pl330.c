@@ -288,7 +288,7 @@ static unsigned cmd_line;
 
 /* The number of default descriptors */
 
-#define NR_DEFAULT_DESC	32
+#define NR_DEFAULT_DESC	16
 
 /* Populated by the PL330 core driver for DMA API driver's info */
 struct pl330_config {
@@ -507,7 +507,7 @@ struct pl330_dmac {
 	/* Maximum possible events/irqs */
 	int			events[32];
 	/* BUS address of MicroCode buffer */
-	dma_addr_t		mcode_bus;
+	u32			mcode_bus;
 	/* CPU address of MicroCode buffer */
 	void			*mcode_cpu;
 	/* List of all Channel threads */
@@ -574,8 +574,6 @@ struct dma_pl330_chan {
 
 	/* for cyclic capability */
 	bool cyclic;
-
-	enum dma_status chan_status;
 };
 
 struct dma_pl330_dmac {
@@ -2410,18 +2408,11 @@ static inline void handle_cyclic_desc_list(struct list_head *list)
 	}
 
 	/* pch will be unset if list was empty */
-	if (!pch || !pch->dmac)
+	if (!pch)
 		return;
 
 	spin_lock_irqsave(&pch->lock, flags);
-	if (pch->chan_status == DMA_PAUSED) {
-		list_for_each_entry(desc, list, node) {
-			desc->status = DONE;
-		}
-		list_splice_tail_init(list, &pch->dmac->desc_pool);
-	} else {
-		list_splice_tail_init(list, &pch->work_list);
-	}
+	list_splice_tail_init(list, &pch->work_list);
 	spin_unlock_irqrestore(&pch->lock, flags);
 }
 
@@ -2462,7 +2453,6 @@ static void pl330_tasklet(unsigned long data)
 
 	spin_lock_irqsave(&pch->lock, flags);
 
-	pch->chan_status = DMA_SUCCESS;
 	/* Pick up ripe tomatoes */
 	list_for_each_entry_safe(desc, _dt, &pch->work_list, node)
 		if (desc->status == DONE) {
@@ -2522,7 +2512,7 @@ bool pl330_filter(struct dma_chan *chan, void *param)
 		return false;
 
 	peri_id = chan->private;
-	return *peri_id == (unsigned long)param;
+	return *peri_id == (unsigned)param;
 }
 EXPORT_SYMBOL(pl330_filter);
 
@@ -2597,7 +2587,6 @@ static int pl330_control(struct dma_chan *chan, enum dma_ctrl_cmd cmd, unsigned 
 		}
 
 		list_splice_tail_init(&list, &pdmac->desc_pool);
-		pch->chan_status = DMA_PAUSED;
 		spin_unlock_irqrestore(&pch->lock, flags);
 		break;
 	case DMA_SLAVE_CONFIG:
@@ -2771,29 +2760,22 @@ static struct dma_pl330_desc *pl330_get_desc(struct dma_pl330_chan *pch)
 	struct dma_pl330_dmac *pdmac = pch->dmac;
 	u8 *peri_id = pch->chan.private;
 	struct dma_pl330_desc *desc;
-	int i = 0;
 
 	/* Pluck one desc from the pool of DMAC */
 	desc = pluck_desc(pdmac);
 
 	/* If the DMAC pool is empty, alloc new */
 	if (!desc) {
-		for(i = 0; i < 3; i++) {
-			if (!add_desc(pdmac, GFP_ATOMIC, 1))
-				continue;
-
-			/* Try again */
-			desc = pluck_desc(pdmac);
-			if (!desc) {
-				dev_err(pch->dmac->pif.dev,
-					"%s:%d i=%d ALERT!\n", __func__, __LINE__,i);
-				continue;
-			}
-			break;
-		}
-
-		if(!desc && i >= 3)
+		if (!add_desc(pdmac, GFP_ATOMIC, 1))
 			return NULL;
+
+		/* Try again */
+		desc = pluck_desc(pdmac);
+		if (!desc) {
+			dev_err(pch->dmac->pif.dev,
+				"%s:%d ALERT!\n", __func__, __LINE__);
+			return NULL;
+		}
 	}
 
 	/* Initialize the descriptor */

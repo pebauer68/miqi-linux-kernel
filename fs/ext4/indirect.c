@@ -390,13 +390,7 @@ static int ext4_alloc_branch(handle_t *handle, struct inode *inode,
 	return 0;
 failed:
 	for (; i >= 0; i--) {
-		/*
-		 * We want to ext4_forget() only freshly allocated indirect
-		 * blocks.  Buffer for new_blocks[i-1] is at branch[i].bh and
-		 * buffer at branch[0].bh is indirect block / inode already
-		 * existing before ext4_alloc_branch() was called.
-		 */
-		if (i > 0 && i != indirect_blks && branch[i].bh)
+		if (i != indirect_blks && branch[i].bh)
 			ext4_forget(handle, 1, inode, branch[i].bh,
 				    branch[i].bh->b_blocknr);
 		ext4_free_blocks(handle, inode, NULL, new_blocks[i],
@@ -691,18 +685,18 @@ retry:
 		 * via ext4_inode_block_unlocked_dio(). Check inode's state
 		 * while holding extra i_dio_count ref.
 		 */
-		inode_dio_begin(inode);
+		atomic_inc(&inode->i_dio_count);
 		smp_mb();
 		if (unlikely(ext4_test_inode_state(inode,
 						    EXT4_STATE_DIOREAD_LOCK))) {
-			inode_dio_end(inode);
+			inode_dio_done(inode);
 			goto locked;
 		}
 		ret = __blockdev_direct_IO(rw, iocb, inode,
 				 inode->i_sb->s_bdev, iov,
 				 offset, nr_segs,
 				 ext4_get_block, NULL, NULL, 0);
-		inode_dio_end(inode);
+		inode_dio_done(inode);
 	} else {
 locked:
 		ret = blockdev_direct_IO(rw, iocb, inode, iov,
@@ -1331,24 +1325,16 @@ static int free_hole_blocks(handle_t *handle, struct inode *inode,
 		blk = *i_data;
 		if (level > 0) {
 			ext4_lblk_t first2;
-			ext4_lblk_t count2;
-
 			bh = sb_bread(inode->i_sb, le32_to_cpu(blk));
 			if (!bh) {
 				EXT4_ERROR_INODE_BLOCK(inode, le32_to_cpu(blk),
 						       "Read failure");
 				return -EIO;
 			}
-			if (first > offset) {
-				first2 = first - offset;
-				count2 = count;
-			} else {
-				first2 = 0;
-				count2 = count - (offset - first);
-			}
+			first2 = (first > offset) ? first - offset : 0;
 			ret = free_hole_blocks(handle, inode, bh,
 					       (__le32 *)bh->b_data, level - 1,
-					       first2, count2,
+					       first2, count - offset,
 					       inode->i_sb->s_blocksize >> 2);
 			if (ret) {
 				brelse(bh);

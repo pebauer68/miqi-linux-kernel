@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2012-2015 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -42,11 +42,11 @@
 /**
  * @brief Set the HW issues mask depending on the GPU ID
  */
-int kbase_hw_set_issues_mask(struct kbase_device *kbdev);
+mali_error kbase_hw_set_issues_mask(kbase_device *kbdev);
 
 /**
  * @brief Set the features mask depending on the GPU ID
  */
-void kbase_hw_set_features_mask(struct kbase_device *kbdev);
+void kbase_hw_set_features_mask(kbase_device *kbdev);
 
 #endif				/* _KBASE_HW_H_ */

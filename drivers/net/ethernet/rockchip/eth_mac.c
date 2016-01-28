@@ -34,25 +34,25 @@ extern char GetSNSectorInfo(char * pbuf);
 
 int eth_mac_read_from_IDB(u8 *mac)
 {
-	int i;
-	char *tempBuf = kmalloc(512, GFP_KERNEL);
+     int i;
+     char *tempBuf = kmalloc(512, GFP_KERNEL);
+    
+    if(mac == NULL)
+        return -EFAULT;
 
-	if(mac == NULL)
-		return -EFAULT;
-
-	GetSNSectorInfo(tempBuf);
-#if 0
+    GetSNSectorInfo(tempBuf);
+    /*
 	for (i = 0; i < 512; i++) {
-		printk("%02x, ", tempBuf[i]);
+        printk("%02x, ", tempBuf[i]);
 		if(((i+1)%16) == 0) printk("\n");
-	}
-#endif
-	for (i = 506; i <= 511; i++) {
+    }
+	*/
+
+    for (i = 506; i <= 511; i++)
 		mac[i-506] = tempBuf[i];
-	}
 
-	kfree(tempBuf);
-
+    kfree(tempBuf);
+    
 	return 0;
 }
 

@@ -35,7 +35,7 @@
 #include <linux/delay.h>
 #include <linux/workqueue.h>
 #include <linux/of.h>
-#include <linux/rtc.h>
+
 
 #include <linux/interrupt.h>
 #include <linux/irq.h>
@@ -92,7 +92,7 @@ enum int_type {
 #define RICOH619_OCV_OFFSET_BOUND	3
 #define RICOH619_OCV_OFFSET_RATIO	2
 
-#define RICOH619_VADP_DROP_WORK
+#define RICOH619_VADP_DROP_WORK 1
 #define RICOH619_TIME_CHG_STEP	(1*HZ)// unit:secound
 #define RICOH619_TIME_CHG_COUNT	15*60//only for test //15*60 
 
@@ -767,14 +767,7 @@ static int get_target_use_cap(struct ricoh619_battery_info *info)
 	j = info->soca->soc - info->soca->soc/1000*1000;
 	Ocv_now_table = ocv_table[i]*100+(ocv_table[i+1]-ocv_table[i])*j/10;
 
-	Rsys_now = (info->soca->Vsys_ave - Ocv_now_table) / info->soca->Ibat_ave;
-	if (((abs(info->soca->soc - info->soca->displayed_soc)) > 10)
-		&& (info->soca->Ibat_ave > -250)) {
-		if (Rsys_now < 0)
-			Rsys_now = max(-info->soca->Rbat, Rsys_now);
-		else
-			Rsys_now = min(info->soca->Rbat, Rsys_now);
-	}
+		Rsys_now = (info->soca->Vsys_ave - Ocv_now_table) / info->soca->Ibat_ave;	
 
 	Ocv_ZeroPer_now = info->soca->target_vsys * 1000 - Ibat_now * Rsys_now;
 
@@ -802,8 +795,8 @@ static int get_target_use_cap(struct ricoh619_battery_info *info)
 
 	FA_CAP_now = fa_cap * ((10000 - start_per) / 100 ) / 100;
 
-	RICOH_FG_DBG("PMU: -------Ocv_ZeroPer_now= %d: start_per= %d =======\n",
-		Ocv_ZeroPer_now, start_per);
+	RICOH_FG_DBG("PMU: -------  Target_Cutoff_Vol= %d: Ocv_ZeroPer_now= %d: start_per= %d =======\n",
+	       Target_Cutoff_Vol, Ocv_ZeroPer_now, start_per);
 
 	/* get RE_CAP_now */
 	RE_CAP_now = FA_CAP_now - use_cap;
@@ -1594,8 +1587,7 @@ end_flow:
 
 	info->soca->last_displayed_soc = info->soca->displayed_soc+50;
 
-	if ((info->soca->displayed_soc >= 9850) && (info->soca->Ibat_ave > -20) && (info->capacity < 100)
-		&& (info->soca->chg_status == POWER_SUPPLY_STATUS_CHARGING))
+	if((info->soca->displayed_soc >= 9850) && (info->soca->Ibat_ave > -20) && (info->capacity < 100))
 	{
 		if(info->chg_complete_rd_flag == 0)
 		{
@@ -2005,6 +1997,7 @@ static void ricoh619_charging_complete_work(struct work_struct *work)
 	RICOH_FG_DBG("info->chg_complete_rd_cnt = %d\n", info->chg_complete_rd_cnt);
 	RICOH_FG_DBG("info->chg_complete_rd_flag = %d\n", info->chg_complete_rd_flag);
 	RICOH_FG_DBG("info->chg_complete_tm_ov_flag = %d\n", info->chg_complete_tm_ov_flag);
+	RICOH_FG_DBG("time_ov_flag = %d\n", time_ov_flag);
 	
 	if(info->chg_complete_rd_flag == 1)
 	{
@@ -2038,7 +2031,7 @@ static void ricoh619_charging_complete_work(struct work_struct *work)
 		}
 	}
 
-	if ((time_ov_flag == 0) && (info->soca->chg_status == POWER_SUPPLY_STATUS_CHARGING))
+	if(time_ov_flag == 0)
 	{
 		info->chg_complete_rd_cnt++;
 		queue_delayed_work(info->monitor_wqueue, &info->charge_complete_ready, 
@@ -2046,7 +2039,7 @@ static void ricoh619_charging_complete_work(struct work_struct *work)
 	}
 	else
 	{
-		info->chg_complete_rd_flag = 0;
+		time_ov_flag = 0;
 	}
 
 	RICOH_FG_DBG("PMU2: %s return\n", __func__);
@@ -3252,7 +3245,8 @@ static void charger_irq_work(struct work_struct *work)
 				ricoh619_write(info->dev->parent, CHGISET_REG, 0xD3); 
 			}
 			#endif
-		} else if (reg_val & 0x80) { /* USE ONLY USB */
+		}	
+		else if (reg_val & 0x80) { /* USE USB */
 			queue_work(info->usb_workqueue, &info->usb_irq_work);
 		}
 	}
@@ -3320,7 +3314,7 @@ static void usb_det_irq_work(struct work_struct *work)
 {
 	struct ricoh619_battery_info *info = container_of(work,
 		 struct ricoh619_battery_info, usb_irq_work);
-	int ret = 0;
+	int ret = 0,i;
 	uint8_t sts;
 
 	RICOH_FG_DBG("PMU:%s In\n", __func__);
@@ -3345,8 +3339,16 @@ static void usb_det_irq_work(struct work_struct *work)
 		dev_err(info->dev, "Error in reading the control register\n");
 
 	sts &= 0x02;
-	if (sts)
+	if (sts) {
+		for(i =0;i<60;i++){
 		ricoh619_usb_charge_det();
+		mdelay(10);
+		}
+	} else {
+		/*********************/
+		/* No process ??     */
+		/*********************/
+	}
 	
 	RICOH_FG_DBG("PMU:%s Out\n", __func__);
 }
@@ -4614,7 +4616,6 @@ static int ricoh619_battery_remove(struct platform_device *pdev)
 }
 
 #ifdef CONFIG_PM
-struct timeval  ts_suspend;
 static int ricoh619_battery_suspend(struct device *dev)
 {
 	struct ricoh619_battery_info *info = dev_get_drvdata(dev);
@@ -4624,7 +4625,6 @@ static int ricoh619_battery_suspend(struct device *dev)
 	int cc_cap = 0;
 	bool is_charging = true;
 	int displayed_soc_temp;
-	do_gettimeofday(&ts_suspend);
 
 	if (g_fg_on_mode
 		 && (info->soca->status == RICOH619_SOCA_STABLE)) {
@@ -4735,7 +4735,7 @@ static int ricoh619_battery_suspend(struct device *dev)
 #ifdef ENABLE_LOW_BATTERY_DETECTION
 	cancel_delayed_work(&info->low_battery_work);
 #endif
-/*	cancel_delayed_work(&info->charge_complete_ready);*/
+	cancel_delayed_work(&info->charge_complete_ready);
 #ifdef ENABLE_FACTORY_MODE
 	cancel_delayed_work(&info->factory_mode_work);
 #endif
@@ -4743,8 +4743,8 @@ static int ricoh619_battery_suspend(struct device *dev)
 #ifdef RICOH619_VADP_DROP_WORK
 	cancel_delayed_work(&info->vadp_drop_work);
 #endif
-/*	info->chg_complete_rd_cnt = 0;*/
-/*	info->chg_complete_rd_flag = 0;*/
+	info->chg_complete_rd_cnt = 0;
+	info->chg_complete_rd_flag = 0;
 
 	if(info->capacity == 100)
 	{
@@ -4774,36 +4774,6 @@ static int ricoh619_battery_resume(struct device *dev)
 	bool is_charging = true;
 	bool is_jeita_updated;
 	int i;
-	int err;
-	struct rtc_time tm;
-	struct timespec tv = {
-			.tv_nsec = NSEC_PER_SEC >> 1,
-	};
-	struct rtc_device *rtc = rtc_class_open(CONFIG_RTC_HCTOSYS_DEVICE);
-
-	err = rtc_read_time(rtc, &tm);
-	if (err) {
-			dev_err(rtc->dev.parent,
-					"hctosys: unable to read the hardware clock\n");	
-	}
-
-	err = rtc_valid_tm(&tm);
-	if (err) {
-			dev_err(rtc->dev.parent,
-					"hctosys: invalid date/time\n");
-	}
-
-	rtc_tm_to_time(&tm, &tv.tv_sec);
-	
-	/*printk("suspend time: %d sec\n", ts_suspend.tv_sec);*/
-	/*printk("resume  time: %d sec\n", tv.tv_sec);*/
-
-	if(info->chg_complete_rd_flag == 2){
-		printk("chg_complete_rd_cnt suspend: %d\n", info->chg_complete_rd_cnt);
-		info->chg_complete_rd_cnt += (tv.tv_sec - ts_suspend.tv_sec);
-		printk("chg_complete_rd_cnt resume: %d\n", info->chg_complete_rd_cnt);
-		flush_work(&info->charge_complete_ready.work);
-	}
 
 	RICOH_FG_DBG(KERN_INFO "PMU: %s: \n", __func__);
 
@@ -4816,7 +4786,6 @@ static int ricoh619_battery_resume(struct device *dev)
 		info->soca->displayed_soc = -EINVAL;
 	} else if (RICOH619_SOCA_ZERO == info->soca->status) {
 		if (calc_ocv(info) > get_OCV_voltage(info, 0)) {
-			RICOH_FG_DBG(KERN_INFO "PMU: %s: RICOH619_SOCA_ZERO if ()...\n", __func__);
 			ret = ricoh619_read(info->dev->parent, PSWR_REG, &val);
 			val &= 0x7f;
 			info->soca->soc = val * 100;
@@ -4849,11 +4818,8 @@ static int ricoh619_battery_resume(struct device *dev)
 				dev_err(info->dev, "Error in writing the control register\n");
 			info->soca->status = RICOH619_SOCA_FG_RESET;
 
-		} else {
-			RICOH_FG_DBG(KERN_INFO "PMU: %s: RICOH619_SOCA_ZERO else()...\n", __func__);
-			/*info->soca->displayed_soc = 0;*/
-			info->soca->displayed_soc  = info->soca->suspend_soc;
-		}
+		} else
+			info->soca->displayed_soc = 0;
 	} else {
 		info->soca->soc = info->soca->suspend_soc;
 

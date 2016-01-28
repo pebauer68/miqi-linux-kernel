@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2012-2015 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -40,21 +40,21 @@
 /** Function type that is called on an KBASE_DEBUG_ASSERT() or KBASE_DEBUG_ASSERT_MSG() */
 typedef void (kbase_debug_assert_hook) (void *);
 
-struct kbasep_debug_assert_cb {
+typedef struct kbasep_debug_assert_cb {
 	kbase_debug_assert_hook *func;
 	void *param;
-};
+} kbasep_debug_assert_cb;
 
 /**
  * @def KBASEP_DEBUG_PRINT_TRACE
  * @brief Private macro containing the format of the trace to display before every message
  * @sa KBASE_DEBUG_SKIP_TRACE, KBASE_DEBUG_SKIP_FUNCTION_NAME
  */
-#if !KBASE_DEBUG_SKIP_TRACE
+#if KBASE_DEBUG_SKIP_TRACE == 0
 #define KBASEP_DEBUG_PRINT_TRACE \
 		"In file: " __FILE__ " line: " CSTD_STR2(__LINE__)
-#if !KBASE_DEBUG_SKIP_FUNCTION_NAME
-#define KBASEP_DEBUG_PRINT_FUNCTION __func__
+#if KBASE_DEBUG_SKIP_FUNCTION_NAME == 0
+#define KBASEP_DEBUG_PRINT_FUNCTION CSTD_FUNC
 #else
 #define KBASEP_DEBUG_PRINT_FUNCTION ""
 #endif
@@ -77,15 +77,15 @@ struct kbasep_debug_assert_cb {
 			pr_err("Mali<ASSERT>: %s function:%s ", trace, function);\
 			pr_err(__VA_ARGS__);\
 			pr_err("\n");\
-		} while (false)
+		} while (MALI_FALSE)
 #else
 #define KBASEP_DEBUG_ASSERT_OUT(trace, function, ...) CSTD_NOP()
 #endif
 
 #ifdef CONFIG_MALI_DEBUG
-#define KBASE_CALL_ASSERT_HOOK() kbasep_debug_assert_call_hook()
+#define KBASE_CALL_ASSERT_HOOK() kbasep_debug_assert_call_hook();
 #else
-#define KBASE_CALL_ASSERT_HOOK() CSTD_NOP()
+#define KBASE_CALL_ASSERT_HOOK() CSTD_NOP();
 #endif
 
 /**
@@ -113,12 +113,12 @@ struct kbasep_debug_assert_cb {
 	 */
 #define KBASE_DEBUG_ASSERT_MSG(expr, ...) \
 		do { \
-			if (!(expr)) { \
+			if (MALI_FALSE == (expr)) { \
 				KBASEP_DEBUG_ASSERT_OUT(KBASEP_DEBUG_PRINT_TRACE, KBASEP_DEBUG_PRINT_FUNCTION, __VA_ARGS__);\
 				KBASE_CALL_ASSERT_HOOK();\
 				BUG();\
 			} \
-		} while (false)
+		} while (MALI_FALSE)
 #endif				/* KBASE_DEBUG_DISABLE_ASSERTS */
 
 /**

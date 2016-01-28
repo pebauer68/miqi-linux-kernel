@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2014-2015 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -20,13 +20,13 @@
  * Replay soft job handlers
  */
 
-#include <linux/dma-mapping.h>
 #include <mali_kbase_config.h>
 #include <mali_kbase.h>
 #include <mali_kbase_mem.h>
-#include <mali_kbase_mem_linux.h>
+#include <mali_kbase_debug.h>
 
 #define JOB_NOT_STARTED 0
+
 #define JOB_TYPE_MASK      0xfe
 #define JOB_TYPE_NULL      (1 << 1)
 #define JOB_TYPE_VERTEX    (5 << 1)
@@ -38,13 +38,13 @@
 #define JOB_FLAG_PERFORM_JOB_BARRIER (1 << 8)
 
 #define JOB_HEADER_32_FBD_OFFSET (31*4)
-#define JOB_HEADER_64_FBD_OFFSET (44*4)
 
 #define FBD_POINTER_MASK (~0x3f)
 
 #define SFBD_TILER_OFFSET (48*4)
 
-#define MFBD_TILER_OFFSET       (14*4)
+#define MFBD_TILER_FLAGS_OFFSET (15*4)
+#define MFBD_TILER_OFFSET       (16*4)
 
 #define FBD_HIERARCHY_WEIGHTS 8
 #define FBD_HIERARCHY_MASK_MASK 0x1fff
@@ -55,58 +55,126 @@
 
 #define JOB_HEADER_ID_MAX                 0xffff
 
-#define JOB_SOURCE_ID(status)		(((status) >> 16) & 0xFFFF)
-#define JOB_POLYGON_LIST		(0x03)
-
-struct job_head {
+typedef struct job_head
+{
 	u32 status;
 	u32 not_complete_index;
 	u64 fault_addr;
 	u16 flags;
 	u16 index;
 	u16 dependencies[2];
-	union {
+	union
+	{
 		u64 _64;
 		u32 _32;
 	} next;
 	u32 x[2];
-	union {
+	union
+	{
 		u64 _64;
 		u32 _32;
 	} fragment_fbd;
-};
+} job_head;
 
-static void dump_job_head(struct kbase_context *kctx, char *head_str,
-		struct job_head *job)
+static void dump_job_head(kbase_context *kctx, char *head_str, job_head *job)
 {
 #ifdef CONFIG_MALI_DEBUG
-	dev_dbg(kctx->kbdev->dev, "%s\n", head_str);
-	dev_dbg(kctx->kbdev->dev, "addr               = %p\n"
-			"status             = %x\n"
-			"not_complete_index = %x\n"
-			"fault_addr         = %llx\n"
-			"flags              = %x\n"
-			"index              = %x\n"
-			"dependencies       = %x,%x\n",
-			job, job->status, job->not_complete_index,
-			job->fault_addr, job->flags, job->index,
-			job->dependencies[0],
-			job->dependencies[1]);
+	struct device *dev = kctx->kbdev->dev;
+
+	dev_dbg(dev, "%s\n", head_str);
+	dev_dbg(dev, "addr               = %p\n"
+					"status             = %x\n"
+					"not_complete_index = %x\n"
+					"fault_addr         = %llx\n"
+					"flags              = %x\n"
+					"index              = %x\n"
+					"dependencies       = %x,%x\n",
+									   job,
+								   job->status,
+						       job->not_complete_index,
+							       job->fault_addr,
+								    job->flags,
+								    job->index,
+							  job->dependencies[0],
+							 job->dependencies[1]);
 
 	if (job->flags & JOB_FLAG_DESC_SIZE)
-		dev_dbg(kctx->kbdev->dev, "next               = %llx\n",
-				job->next._64);
+		dev_dbg(dev, "next               = %llx\n", job->next._64);
 	else
-		dev_dbg(kctx->kbdev->dev, "next               = %x\n",
-				job->next._32);
+		dev_dbg(dev, "next               = %x\n", job->next._32);
 #endif
 }
 
-static int kbasep_replay_reset_sfbd(struct kbase_context *kctx,
-		u64 fbd_address, u64 tiler_heap_free,
-		u16 hierarchy_mask, u32 default_weight)
+
+static void *kbasep_map_page(kbase_context *kctx, mali_addr64 gpu_addr,
+								u64 *phys_addr)
 {
-	struct {
+	void *cpu_addr = NULL;
+	u64 page_index;
+	kbase_va_region *region;
+	phys_addr_t *page_array;
+
+	region = kbase_region_tracker_find_region_enclosing_address(kctx,
+								     gpu_addr);
+	if (!region || (region->flags & KBASE_REG_FREE))
+		return NULL;
+
+	page_index = (gpu_addr >> PAGE_SHIFT) - region->start_pfn;
+	if (page_index >= kbase_reg_current_backed_size(region))
+		return NULL;
+
+	page_array = kbase_get_phy_pages(region);
+	if (!page_array)
+		return NULL;
+
+	cpu_addr = kmap_atomic(pfn_to_page(PFN_DOWN(page_array[page_index])));
+	if (!cpu_addr)
+		return NULL;
+
+	if (phys_addr)
+		*phys_addr = page_array[page_index];
+
+	return cpu_addr + (gpu_addr & ~PAGE_MASK);
+}
+
+static void *kbasep_map_page_sync(kbase_context *kctx, mali_addr64 gpu_addr,
+								u64 *phys_addr)
+{
+	void *cpu_addr = kbasep_map_page(kctx, gpu_addr, phys_addr);
+
+	if (!cpu_addr)
+		return NULL;
+
+	kbase_sync_to_cpu(*phys_addr,
+				 (void *)((uintptr_t)cpu_addr & PAGE_MASK),
+								    PAGE_SIZE);
+
+	return cpu_addr;
+}
+
+static void kbasep_unmap_page(void *cpu_addr)
+{
+	kunmap_atomic((void *)((uintptr_t)cpu_addr & PAGE_MASK));
+}
+
+static void kbasep_unmap_page_sync(void *cpu_addr, u64 phys_addr)
+{
+	kbase_sync_to_memory(phys_addr,
+				 (void *)((uintptr_t)cpu_addr & PAGE_MASK),
+								    PAGE_SIZE);
+
+	kunmap_atomic((void *)((uintptr_t)cpu_addr & PAGE_MASK));
+}
+
+static mali_error kbasep_replay_reset_sfbd(kbase_context *kctx,
+					   mali_addr64 fbd_address,
+					   mali_addr64 tiler_heap_free,
+					   u16 hierarchy_mask,
+					   u32 default_weight)
+{
+	u64 phys_addr;
+	struct
+	{
 		u32 padding_1[1];
 		u32 flags;
 		u64 padding_2[2];
@@ -114,23 +182,22 @@ static int kbasep_replay_reset_sfbd(struct kbase_context *kctx,
 		u32 padding[8];
 		u32 weights[FBD_HIERARCHY_WEIGHTS];
 	} *fbd_tiler;
-	struct kbase_vmap_struct map;
+	struct device *dev = kctx->kbdev->dev;
 
-	dev_dbg(kctx->kbdev->dev, "fbd_address: %llx\n", fbd_address);
+	dev_dbg(dev, "fbd_address: %llx\n", fbd_address);
 
-	fbd_tiler = kbase_vmap(kctx, fbd_address + SFBD_TILER_OFFSET,
-			sizeof(*fbd_tiler), &map);
+	fbd_tiler = kbasep_map_page_sync(kctx, fbd_address + SFBD_TILER_OFFSET,
+								   &phys_addr);
 	if (!fbd_tiler) {
-		dev_err(kctx->kbdev->dev, "kbasep_replay_reset_fbd: failed to map fbd\n");
-		return -EINVAL;
+		dev_err(dev, "kbasep_replay_reset_fbd: failed to map fbd\n");
+		return MALI_ERROR_FUNCTION_FAILED;
 	}
-
 #ifdef CONFIG_MALI_DEBUG
-	dev_dbg(kctx->kbdev->dev,
-		"FBD tiler:\n"
-		"flags = %x\n"
-		"heap_free_address = %llx\n",
-		fbd_tiler->flags, fbd_tiler->heap_free_address);
+	dev_dbg(dev, "FBD tiler:\n"
+				"flags = %x\n"
+				"heap_free_address = %llx\n",
+							      fbd_tiler->flags,
+						 fbd_tiler->heap_free_address);
 #endif
 	if (hierarchy_mask) {
 		u32 weights[HIERARCHY_WEIGHTS];
@@ -148,12 +215,12 @@ static int kbasep_replay_reset_sfbd(struct kbase_context *kctx,
 		}
 
 
-		dev_dbg(kctx->kbdev->dev, "Old hierarchy mask=%x  New hierarchy mask=%x\n",
-				old_hierarchy_mask, hierarchy_mask);
-
+		dev_dbg(dev,
+			      "Old hierarchy mask=%x  New hierarchy mask=%x\n",
+					   old_hierarchy_mask, hierarchy_mask);
 		for (i = 0; i < HIERARCHY_WEIGHTS; i++)
-			dev_dbg(kctx->kbdev->dev, " Hierarchy weight %02d: %08x\n",
-					i, weights[i]);
+			dev_dbg(dev, " Hierarchy weight %02d: %08x\n",
+								i, weights[i]);
 
 		j = 0;
 
@@ -161,90 +228,7 @@ static int kbasep_replay_reset_sfbd(struct kbase_context *kctx,
 			if (hierarchy_mask & (1 << i)) {
 				KBASE_DEBUG_ASSERT(j < FBD_HIERARCHY_WEIGHTS);
 
-				dev_dbg(kctx->kbdev->dev, " Writing hierarchy level %02d (%08x) to %d\n",
-						i, weights[i], j);
-
-				fbd_tiler->weights[j++] = weights[i];
-			}
-		}
-
-		for (; j < FBD_HIERARCHY_WEIGHTS; j++)
-			fbd_tiler->weights[j] = 0;
-
-		fbd_tiler->flags = hierarchy_mask | (1 << 16);
-	}
-
-	fbd_tiler->heap_free_address = tiler_heap_free;
-
-	dev_dbg(kctx->kbdev->dev, "heap_free_address=%llx flags=%x\n",
-			fbd_tiler->heap_free_address, fbd_tiler->flags);
-
-	kbase_vunmap(kctx, &map);
-
-	return 0;
-}
-
-static int kbasep_replay_reset_mfbd(struct kbase_context *kctx,
-		u64 fbd_address, u64 tiler_heap_free,
-		u16 hierarchy_mask, u32 default_weight)
-{
-	struct kbase_vmap_struct map;
-	struct {
-		u32 padding_0;
-		u32 flags;
-		u64 padding_1[2];
-		u64 heap_free_address;
-		u64 padding_2;
-		u32 weights[FBD_HIERARCHY_WEIGHTS];
-	} *fbd_tiler;
-
-	dev_dbg(kctx->kbdev->dev, "fbd_address: %llx\n", fbd_address);
-
-	fbd_tiler = kbase_vmap(kctx, fbd_address + MFBD_TILER_OFFSET,
-			sizeof(*fbd_tiler), &map);
-	if (!fbd_tiler) {
-		dev_err(kctx->kbdev->dev,
-			       "kbasep_replay_reset_fbd: failed to map fbd\n");
-		return -EINVAL;
-	}
-
-#ifdef CONFIG_MALI_DEBUG
-	dev_dbg(kctx->kbdev->dev, "FBD tiler:\n"
-			"flags = %x\n"
-			"heap_free_address = %llx\n",
-			fbd_tiler->flags,
-			fbd_tiler->heap_free_address);
-#endif
-	if (hierarchy_mask) {
-		u32 weights[HIERARCHY_WEIGHTS];
-		u16 old_hierarchy_mask = (fbd_tiler->flags) &
-						       FBD_HIERARCHY_MASK_MASK;
-		int i, j = 0;
-
-		for (i = 0; i < HIERARCHY_WEIGHTS; i++) {
-			if (old_hierarchy_mask & (1 << i)) {
-				KBASE_DEBUG_ASSERT(j < FBD_HIERARCHY_WEIGHTS);
-				weights[i] = fbd_tiler->weights[j++];
-			} else {
-				weights[i] = default_weight;
-			}
-		}
-
-
-		dev_dbg(kctx->kbdev->dev, "Old hierarchy mask=%x  New hierarchy mask=%x\n",
-				old_hierarchy_mask, hierarchy_mask);
-
-		for (i = 0; i < HIERARCHY_WEIGHTS; i++)
-			dev_dbg(kctx->kbdev->dev, " Hierarchy weight %02d: %08x\n",
-					i, weights[i]);
-
-		j = 0;
-
-		for (i = 0; i < HIERARCHY_WEIGHTS; i++) {
-			if (hierarchy_mask & (1 << i)) {
-				KBASE_DEBUG_ASSERT(j < FBD_HIERARCHY_WEIGHTS);
-
-				dev_dbg(kctx->kbdev->dev,
+				dev_dbg(dev,
 				" Writing hierarchy level %02d (%08x) to %d\n",
 							     i, weights[i], j);
 
@@ -260,9 +244,115 @@ static int kbasep_replay_reset_mfbd(struct kbase_context *kctx,
 
 	fbd_tiler->heap_free_address = tiler_heap_free;
 
-	kbase_vunmap(kctx, &map);
+	dev_dbg(dev, "heap_free_address=%llx flags=%x\n",
+			       fbd_tiler->heap_free_address, fbd_tiler->flags);
 
-	return 0;
+	kbasep_unmap_page_sync(fbd_tiler, phys_addr);
+
+	return MALI_ERROR_NONE;
+}
+
+static mali_error kbasep_replay_reset_mfbd(kbase_context *kctx,
+					   mali_addr64 fbd_address,
+					   mali_addr64 tiler_heap_free,
+					   u16 hierarchy_mask,
+					   u32 default_weight)
+{
+	u64 phys_addr, phys_addr_flags;
+	struct
+	{
+		u64 padding_1[2];
+		u64 heap_free_address;
+		u64 padding_2;
+		u32 weights[FBD_HIERARCHY_WEIGHTS];
+	} *fbd_tiler;
+	u32 *fbd_tiler_flags;
+	mali_bool flags_different_page;
+	struct device *dev = kctx->kbdev->dev;
+
+	dev_dbg(dev, "fbd_address: %llx\n", fbd_address);
+
+	fbd_tiler = kbasep_map_page_sync(kctx, fbd_address + MFBD_TILER_OFFSET,
+								   &phys_addr);
+	if (((fbd_address + MFBD_TILER_OFFSET) & PAGE_MASK) !=
+	    ((fbd_address + MFBD_TILER_FLAGS_OFFSET) & PAGE_MASK)) {
+		flags_different_page = MALI_TRUE;
+		fbd_tiler_flags = kbasep_map_page_sync(kctx,
+					 fbd_address + MFBD_TILER_FLAGS_OFFSET,
+							     &phys_addr_flags);
+	} else {
+		flags_different_page = MALI_FALSE;
+		fbd_tiler_flags = (u32 *)((uintptr_t)fbd_tiler -
+				  MFBD_TILER_OFFSET + MFBD_TILER_FLAGS_OFFSET);
+	}
+
+	if (!fbd_tiler || !fbd_tiler_flags) {
+		dev_err(dev, "kbasep_replay_reset_fbd: failed to map fbd\n");
+
+		if (fbd_tiler_flags && flags_different_page)
+			kbasep_unmap_page_sync(fbd_tiler_flags,
+							      phys_addr_flags);
+		if (fbd_tiler)
+			kbasep_unmap_page_sync(fbd_tiler, phys_addr);
+
+		return MALI_ERROR_FUNCTION_FAILED;
+	}
+#ifdef CONFIG_MALI_DEBUG
+	dev_dbg(dev, "FBD tiler:\n"
+				"heap_free_address = %llx\n",
+				 fbd_tiler->heap_free_address);
+#endif
+	if (hierarchy_mask) {
+		u32 weights[HIERARCHY_WEIGHTS];
+		u16 old_hierarchy_mask = (*fbd_tiler_flags) &
+						       FBD_HIERARCHY_MASK_MASK;
+		int i, j = 0;
+
+		for (i = 0; i < HIERARCHY_WEIGHTS; i++) {
+			if (old_hierarchy_mask & (1 << i)) {
+				KBASE_DEBUG_ASSERT(j < FBD_HIERARCHY_WEIGHTS);
+				weights[i] = fbd_tiler->weights[j++];
+			}
+			else
+				weights[i] = default_weight;
+		}
+
+
+		dev_dbg(dev,
+			      "Old hierarchy mask=%x  New hierarchy mask=%x\n",
+					   old_hierarchy_mask, hierarchy_mask);
+		for (i = 0; i < HIERARCHY_WEIGHTS; i++)
+			dev_dbg(dev, " Hierarchy weight %02d: %08x\n",
+								i, weights[i]);
+
+		j = 0;
+
+		for (i = 0; i < HIERARCHY_WEIGHTS; i++) {
+			if (hierarchy_mask & (1 << i)) {
+				KBASE_DEBUG_ASSERT(j < FBD_HIERARCHY_WEIGHTS);
+
+				dev_dbg(dev,
+				" Writing hierarchy level %02d (%08x) to %d\n",
+							     i, weights[i], j);
+
+				fbd_tiler->weights[j++] = weights[i];
+			}
+		}
+
+		for (; j < FBD_HIERARCHY_WEIGHTS; j++)
+			fbd_tiler->weights[j] = 0;
+
+		*fbd_tiler_flags = hierarchy_mask | (1 << 16);
+	}
+
+	fbd_tiler->heap_free_address = tiler_heap_free;
+
+	if (flags_different_page)
+		kbasep_unmap_page_sync(fbd_tiler_flags, phys_addr_flags);
+
+	kbasep_unmap_page_sync(fbd_tiler, phys_addr);
+
+	return MALI_ERROR_NONE;
 }
 
 /**
@@ -278,48 +368,39 @@ static int kbasep_replay_reset_mfbd(struct kbase_context *kctx,
  * @param[in] hierarchy_mask    The hierarchy mask to use
  * @param[in] default_weight    Default hierarchy weight to write when no other
  *                              weight is given in the FBD
- * @param[in] job_64            true if this job is using 64-bit
+ * @param[in] job_64            MALI_TRUE if this job is using 64-bit
  *                              descriptors
  *
- * @return 0 on success, error code on failure
+ * @return MALI_ERROR_NONE on success, error code on failure
  */
-static int kbasep_replay_reset_tiler_job(struct kbase_context *kctx,
-		u64 job_header,	u64 tiler_heap_free,
-		u16 hierarchy_mask, u32 default_weight,	bool job_64)
+static mali_error kbasep_replay_reset_tiler_job(kbase_context *kctx,
+						mali_addr64 job_header,
+						mali_addr64 tiler_heap_free,
+						u16 hierarchy_mask,
+						u32 default_weight,
+						mali_bool job_64)
 {
-	struct kbase_vmap_struct map;
-	u64 fbd_address;
+	mali_addr64 fbd_address;
 
 	if (job_64) {
-		u64 *job_ext;
-
-		job_ext = kbase_vmap(kctx,
-				job_header + JOB_HEADER_64_FBD_OFFSET,
-				sizeof(*job_ext), &map);
-
-		if (!job_ext) {
-			dev_err(kctx->kbdev->dev, "kbasep_replay_reset_tiler_job: failed to map jc\n");
-			return -EINVAL;
-		}
-
-		fbd_address = *job_ext;
-
-		kbase_vunmap(kctx, &map);
+		dev_err(kctx->kbdev->dev,
+				      "64-bit job descriptor not supported\n");
+		return MALI_ERROR_FUNCTION_FAILED;
 	} else {
-		u32 *job_ext;
+		u32 *job_ext;	
 
-		job_ext = kbase_vmap(kctx,
-				job_header + JOB_HEADER_32_FBD_OFFSET,
-				sizeof(*job_ext), &map);
-
+		job_ext = kbasep_map_page(kctx,
+					 job_header + JOB_HEADER_32_FBD_OFFSET,
+									 NULL);
 		if (!job_ext) {
-			dev_err(kctx->kbdev->dev, "kbasep_replay_reset_tiler_job: failed to map jc\n");
-			return -EINVAL;
+			dev_err(kctx->kbdev->dev,
+			  "kbasep_replay_reset_tiler_job: failed to map jc\n");
+			return MALI_ERROR_FUNCTION_FAILED;
 		}
 
 		fbd_address = *job_ext;
 
-		kbase_vunmap(kctx, &map);
+		kbasep_unmap_page(job_ext);
 	}
 
 	if (fbd_address & FBD_TYPE) {
@@ -361,33 +442,38 @@ static int kbasep_replay_reset_tiler_job(struct kbase_context *kctx,
  * @param[in] hierarchy_mask    The hierarchy mask to use
  * @param[in] default_weight    Default hierarchy weight to write when no other
  *                              weight is given in the FBD
- * @param[in] first_in_chain    true if this job is the first in the chain
- * @param[in] fragment_chain    true if this job is in the fragment chain
+ * @param[in] first_in_chain    MALI_TRUE if this job is the first in the chain
+ * @param[in] fragment_chain    MALI_TRUE if this job is in the fragment chain
  *
- * @return 0 on success, error code on failure
+ * @return MALI_ERROR_NONE on success, error code on failure
  */
-static int kbasep_replay_reset_job(struct kbase_context *kctx,
-		u64 *job_header, u64 prev_jc,
-		u64 tiler_heap_free, u16 hierarchy_mask,
-		u32 default_weight, u16 hw_job_id_offset,
-		bool first_in_chain, bool fragment_chain)
+static mali_error kbasep_replay_reset_job(kbase_context *kctx,
+						mali_addr64 *job_header,
+						mali_addr64 prev_jc,
+						mali_addr64 tiler_heap_free,
+						u16 hierarchy_mask,
+						u32 default_weight,
+						u16 hw_job_id_offset,
+						mali_bool first_in_chain,
+						mali_bool fragment_chain)
 {
-	struct job_head *job;
-	u64 new_job_header;
-	struct kbase_vmap_struct map;
+	job_head *job;
+	u64 phys_addr;
+	mali_addr64 new_job_header;
+	struct device *dev = kctx->kbdev->dev;
 
-	job = kbase_vmap(kctx, *job_header, sizeof(*job), &map);
+	job = kbasep_map_page_sync(kctx, *job_header, &phys_addr);
 	if (!job) {
-		dev_err(kctx->kbdev->dev,
-				 "kbasep_replay_parse_jc: failed to map jc\n");
-		return -EINVAL;
+		dev_err(dev, "kbasep_replay_parse_jc: failed to map jc\n");
+		return MALI_ERROR_FUNCTION_FAILED;
 	}
 
 	dump_job_head(kctx, "Job header:", job);
 
 	if (job->status == JOB_NOT_STARTED && !fragment_chain) {
-		dev_err(kctx->kbdev->dev, "Job already not started\n");
-		goto out_unmap;
+		dev_err(dev, "Job already not started\n");
+		kbasep_unmap_page_sync(job, phys_addr);
+		return MALI_ERROR_FUNCTION_FAILED;
 	}
 	job->status = JOB_NOT_STARTED;
 
@@ -395,8 +481,9 @@ static int kbasep_replay_reset_job(struct kbase_context *kctx,
 		job->flags = (job->flags & ~JOB_TYPE_MASK) | JOB_TYPE_NULL;
 
 	if ((job->flags & JOB_TYPE_MASK) == JOB_TYPE_FUSED) {
-		dev_err(kctx->kbdev->dev, "Fused jobs can not be replayed\n");
-		goto out_unmap;
+		dev_err(dev, "Fused jobs can not be replayed\n");
+		kbasep_unmap_page_sync(job, phys_addr);
+		return MALI_ERROR_FUNCTION_FAILED;
 	}
 
 	if (first_in_chain)
@@ -405,9 +492,9 @@ static int kbasep_replay_reset_job(struct kbase_context *kctx,
 	if ((job->dependencies[0] + hw_job_id_offset) > JOB_HEADER_ID_MAX ||
 	    (job->dependencies[1] + hw_job_id_offset) > JOB_HEADER_ID_MAX ||
 	    (job->index + hw_job_id_offset) > JOB_HEADER_ID_MAX) {
-		dev_err(kctx->kbdev->dev,
-			     "Job indicies/dependencies out of valid range\n");
-		goto out_unmap;
+		dev_err(dev, "Job indicies/dependencies out of valid range\n");
+		kbasep_unmap_page_sync(job, phys_addr);
+		return MALI_ERROR_FUNCTION_FAILED;
 	}
 
 	if (job->dependencies[0])
@@ -429,47 +516,51 @@ static int kbasep_replay_reset_job(struct kbase_context *kctx,
 	dump_job_head(kctx, "Updated to:", job);
 
 	if ((job->flags & JOB_TYPE_MASK) == JOB_TYPE_TILER) {
-		bool job_64 = (job->flags & JOB_FLAG_DESC_SIZE) != 0;
-
+		kbasep_unmap_page_sync(job, phys_addr);
 		if (kbasep_replay_reset_tiler_job(kctx, *job_header,
-				tiler_heap_free, hierarchy_mask,
-				default_weight, job_64) != 0)
-			goto out_unmap;
+					tiler_heap_free, hierarchy_mask, 
+					default_weight,
+					job->flags & JOB_FLAG_DESC_SIZE) !=
+							MALI_ERROR_NONE)
+			return MALI_ERROR_FUNCTION_FAILED;
 
 	} else if ((job->flags & JOB_TYPE_MASK) == JOB_TYPE_FRAGMENT) {
 		u64 fbd_address;
 
-		if (job->flags & JOB_FLAG_DESC_SIZE)
-			fbd_address = job->fragment_fbd._64;
-		else
+		if (job->flags & JOB_FLAG_DESC_SIZE) {
+			kbasep_unmap_page_sync(job, phys_addr);
+			dev_err(dev, "64-bit job descriptor not supported\n");
+			return MALI_ERROR_FUNCTION_FAILED;
+		} else {
 			fbd_address = (u64)job->fragment_fbd._32;
+		}
+
+		kbasep_unmap_page_sync(job, phys_addr);
 
 		if (fbd_address & FBD_TYPE) {
 			if (kbasep_replay_reset_mfbd(kctx,
-					fbd_address & FBD_POINTER_MASK,
-					tiler_heap_free,
-					hierarchy_mask,
-					default_weight) != 0)
-				goto out_unmap;
+						fbd_address & FBD_POINTER_MASK,
+						tiler_heap_free,
+						hierarchy_mask,
+						default_weight) !=
+							       MALI_ERROR_NONE)
+				return MALI_ERROR_FUNCTION_FAILED;
 		} else {
 			if (kbasep_replay_reset_sfbd(kctx,
-					fbd_address & FBD_POINTER_MASK,
-					tiler_heap_free,
-					hierarchy_mask,
-					default_weight) != 0)
-				goto out_unmap;
+						fbd_address & FBD_POINTER_MASK,
+						tiler_heap_free,
+						hierarchy_mask,
+						default_weight) !=
+							       MALI_ERROR_NONE)
+				return MALI_ERROR_FUNCTION_FAILED;
 		}
+	} else {
+		kbasep_unmap_page_sync(job, phys_addr);
 	}
-
-	kbase_vunmap(kctx, &map);
 
 	*job_header = new_job_header;
 
-	return 0;
-
-out_unmap:
-	kbase_vunmap(kctx, &map);
-	return -EINVAL;
+	return MALI_ERROR_NONE;
 }
 
 /**
@@ -479,23 +570,24 @@ out_unmap:
  * @param[in] jc          Job chain start address
  * @param[out] hw_job_id  Highest job ID in chain
  *
- * @return 0 on success, error code on failure
+ * @return MALI_ERROR_NONE on success, error code on failure
  */
-static int kbasep_replay_find_hw_job_id(struct kbase_context *kctx,
-		u64 jc,	u16 *hw_job_id)
+static mali_error kbasep_replay_find_hw_job_id(kbase_context *kctx,
+						mali_addr64 jc,
+						u16 *hw_job_id)
 {
 	while (jc) {
-		struct job_head *job;
-		struct kbase_vmap_struct map;
+		job_head *job;
+		u64 phys_addr;
 
 		dev_dbg(kctx->kbdev->dev,
 			"kbasep_replay_find_hw_job_id: parsing jc=%llx\n", jc);
 
-		job = kbase_vmap(kctx, jc, sizeof(*job), &map);
+		job = kbasep_map_page_sync(kctx, jc, &phys_addr);
 		if (!job) {
 			dev_err(kctx->kbdev->dev, "failed to map jc\n");
 
-			return -EINVAL;
+			return MALI_ERROR_FUNCTION_FAILED;
 		}
 
 		if (job->index > *hw_job_id)
@@ -506,10 +598,10 @@ static int kbasep_replay_find_hw_job_id(struct kbase_context *kctx,
 		else
 			jc = job->next._32;
 
-		kbase_vunmap(kctx, &map);
+		kbasep_unmap_page_sync(job, phys_addr);
 	}
 
-	return 0;
+	return MALI_ERROR_NONE;
 }
 
 /**
@@ -530,43 +622,50 @@ static int kbasep_replay_find_hw_job_id(struct kbase_context *kctx,
  * @param[in] default_weight    Default hierarchy weight to write when no other
  *                              weight is given in the FBD
  * @param[in] hw_job_id_offset  Offset for HW job IDs
- * @param[in] fragment_chain    true if this chain is the fragment chain
+ * @param[in] fragment_chain    MAIL_TRUE if this chain is the fragment chain
  *
- * @return 0 on success, error code otherwise
+ * @return MALI_ERROR_NONE on success, error code otherwise
  */
-static int kbasep_replay_parse_jc(struct kbase_context *kctx,
-		u64 jc,	u64 prev_jc,
-		u64 tiler_heap_free, u16 hierarchy_mask,
-		u32 default_weight, u16 hw_job_id_offset,
-		bool fragment_chain)
+static mali_error kbasep_replay_parse_jc(kbase_context *kctx,
+						mali_addr64 jc,
+						mali_addr64 prev_jc,
+						mali_addr64 tiler_heap_free,
+						u16 hierarchy_mask,
+						u32 default_weight,
+						u16 hw_job_id_offset,
+						mali_bool fragment_chain)
 {
-	bool first_in_chain = true;
+	mali_bool first_in_chain = MALI_TRUE;
 	int nr_jobs = 0;
 
-	dev_dbg(kctx->kbdev->dev, "kbasep_replay_parse_jc: jc=%llx hw_job_id=%x\n",
-			jc, hw_job_id_offset);
+	dev_dbg(kctx->kbdev->dev,
+			      "kbasep_replay_parse_jc: jc=%llx hw_job_id=%x\n",
+							 jc, hw_job_id_offset);
 
 	while (jc) {
-		dev_dbg(kctx->kbdev->dev, "kbasep_replay_parse_jc: parsing jc=%llx\n", jc);
+		dev_dbg(kctx->kbdev->dev,
+				   "kbasep_replay_parse_jc: parsing jc=%llx\n",
+									   jc);
 
 		if (kbasep_replay_reset_job(kctx, &jc, prev_jc,
 				tiler_heap_free, hierarchy_mask,
 				default_weight, hw_job_id_offset,
-				first_in_chain, fragment_chain) != 0)
-			return -EINVAL;
+				first_in_chain, fragment_chain) != 
+							     MALI_ERROR_NONE)
+			return MALI_ERROR_FUNCTION_FAILED;
 
-		first_in_chain = false;
+		first_in_chain = MALI_FALSE;
 
 		nr_jobs++;
 		if (fragment_chain &&
-		    nr_jobs >= BASE_JD_REPLAY_F_CHAIN_JOB_LIMIT) {
+                		nr_jobs >= BASE_JD_REPLAY_F_CHAIN_JOB_LIMIT) {
 			dev_err(kctx->kbdev->dev,
 				"Exceeded maximum number of jobs in fragment chain\n");
-			return -EINVAL;
+			return MALI_ERROR_FUNCTION_FAILED;
 		}
 	}
 
-	return 0;
+	return MALI_ERROR_NONE;
 }
 
 /**
@@ -578,11 +677,11 @@ static int kbasep_replay_parse_jc(struct kbase_context *kctx,
  * @param[in] katom     The atom to be reset
  * @param[in] dep_atom  The dependency to be attached to the atom
  */
-static void kbasep_replay_reset_softjob(struct kbase_jd_atom *katom,
-		struct kbase_jd_atom *dep_atom)
+static void kbasep_replay_reset_softjob(kbase_jd_atom *katom,
+						       kbase_jd_atom *dep_atom)
 {
 	katom->status = KBASE_JD_ATOM_STATE_QUEUED;
-	kbase_jd_katom_dep_set(&katom->dep[0], dep_atom, BASE_JD_DEP_TYPE_DATA);
+	katom->dep_atom[0] = dep_atom;
 	list_add_tail(&katom->dep_item[0], &dep_atom->dep_head[0]);
 }
 
@@ -597,9 +696,9 @@ static void kbasep_replay_reset_softjob(struct kbase_jd_atom *katom,
  * @param[in] kctx      Context pointer
  * @return An atom ID, or -1 on failure
  */
-static int kbasep_allocate_katom(struct kbase_context *kctx)
+static int kbasep_allocate_katom(kbase_context *kctx)
 {
-	struct kbase_jd_context *jctx = &kctx->jctx;
+	kbase_jd_context *jctx = &kctx->jctx;
 	int i;
 
 	for (i = BASE_JD_ATOM_COUNT-1; i > 0; i--) {
@@ -625,35 +724,36 @@ static int kbasep_allocate_katom(struct kbase_context *kctx)
  * @param[in] kctx      Context pointer
  * @param[in] atom_id   ID of atom to release
  */
-static void kbasep_release_katom(struct kbase_context *kctx, int atom_id)
+static void kbasep_release_katom(kbase_context *kctx, int atom_id)
 {
-	struct kbase_jd_context *jctx = &kctx->jctx;
+	kbase_jd_context *jctx = &kctx->jctx;
 
-	dev_dbg(kctx->kbdev->dev, "kbasep_release_katom: Released atom %d\n",
-			atom_id);
+	dev_dbg(kctx->kbdev->dev,
+				    "kbasep_release_katom: Released atom %d\n",
+								      atom_id);
 
 	while (!list_empty(&jctx->atoms[atom_id].dep_head[0]))
 		list_del(jctx->atoms[atom_id].dep_head[0].next);
-
 	while (!list_empty(&jctx->atoms[atom_id].dep_head[1]))
 		list_del(jctx->atoms[atom_id].dep_head[1].next);
 
 	jctx->atoms[atom_id].status = KBASE_JD_ATOM_STATE_UNUSED;
 }
 
-static void kbasep_replay_create_atom(struct kbase_context *kctx,
-				      struct base_jd_atom_v2 *atom,
+static void kbasep_replay_create_atom(kbase_context *kctx,
+				      base_jd_atom_v2 *atom,
 				      int atom_nr,
-				      base_jd_prio prio)
+				      int prio)
 {
 	atom->nr_extres = 0;
 	atom->extres_list.value = NULL;
 	atom->device_nr = 0;
-	atom->prio = prio;
+	/* Convert priority back from NICE range */
+	atom->prio = ((prio << 16) / ((20 << 16) / 128)) - 128;
 	atom->atom_number = atom_nr;
 
-	base_jd_atom_dep_set(&atom->pre_dep[0], 0 , BASE_JD_DEP_TYPE_INVALID);
-	base_jd_atom_dep_set(&atom->pre_dep[1], 0 , BASE_JD_DEP_TYPE_INVALID);
+	atom->pre_dep[0] = 0;
+	atom->pre_dep[1] = 0;
 
 	atom->udata.blob[0] = 0;
 	atom->udata.blob[1] = 0;
@@ -676,59 +776,58 @@ static void kbasep_replay_create_atom(struct kbase_context *kctx,
  * @param[out] f_atom      Atom to use for fragment jobs
  * @param[in]  prio        Priority of new atom (inherited from replay soft
  *                         job)
- * @return 0 on success, error code on failure
+ * @return MALI_ERROR_NONE on success, error code on failure
  */
-static int kbasep_replay_create_atoms(struct kbase_context *kctx,
-		struct base_jd_atom_v2 *t_atom,
-		struct base_jd_atom_v2 *f_atom,
-		base_jd_prio prio)
+static mali_error kbasep_replay_create_atoms(kbase_context *kctx,
+					     base_jd_atom_v2 *t_atom,
+					     base_jd_atom_v2 *f_atom,
+					     int prio)
 {
 	int t_atom_nr, f_atom_nr;
 
 	t_atom_nr = kbasep_allocate_katom(kctx);
 	if (t_atom_nr < 0) {
 		dev_err(kctx->kbdev->dev, "Failed to allocate katom\n");
-		return -EINVAL;
+		return MALI_ERROR_FUNCTION_FAILED;
 	}
 
 	f_atom_nr = kbasep_allocate_katom(kctx);
 	if (f_atom_nr < 0) {
 		dev_err(kctx->kbdev->dev, "Failed to allocate katom\n");
 		kbasep_release_katom(kctx, t_atom_nr);
-		return -EINVAL;
+		return MALI_ERROR_FUNCTION_FAILED;
 	}
 
 	kbasep_replay_create_atom(kctx, t_atom, t_atom_nr, prio);
 	kbasep_replay_create_atom(kctx, f_atom, f_atom_nr, prio);
 
-	base_jd_atom_dep_set(&f_atom->pre_dep[0], t_atom_nr , BASE_JD_DEP_TYPE_DATA);
+	f_atom->pre_dep[0] = t_atom_nr;
 
-	return 0;
+	return MALI_ERROR_NONE;
 }
 
 #ifdef CONFIG_MALI_DEBUG
-static void payload_dump(struct kbase_context *kctx, base_jd_replay_payload *payload)
+static void payload_dump(kbase_context *kctx, base_jd_replay_payload *payload)
 {
-	u64 next;
+	mali_addr64 next;
 
 	dev_dbg(kctx->kbdev->dev, "Tiler jc list :\n");
 	next = payload->tiler_jc_list;
 
 	while (next) {
-		struct kbase_vmap_struct map;
-		base_jd_replay_jc *jc_struct;
-
-		jc_struct = kbase_vmap(kctx, next, sizeof(*jc_struct), &map);
+		base_jd_replay_jc *jc_struct = kbasep_map_page(kctx, next, NULL);
 
 		if (!jc_struct)
 			return;
 
-		dev_dbg(kctx->kbdev->dev, "* jc_struct=%p jc=%llx next=%llx\n",
-				jc_struct, jc_struct->jc, jc_struct->next);
-
+		dev_dbg(kctx->kbdev->dev,
+					  "* jc_struct=%p jc=%llx next=%llx\n",
+								     jc_struct,
+								 jc_struct->jc,
+							      jc_struct->next);
 		next = jc_struct->next;
 
-		kbase_vunmap(kctx, &map);
+		kbasep_unmap_page(jc_struct);
 	}
 }
 #endif
@@ -742,41 +841,47 @@ static void payload_dump(struct kbase_context *kctx, base_jd_replay_payload *pay
  * @param[in] replay_atom  Replay soft job atom
  * @param[in] t_atom       Atom to use for tiler jobs
  * @param[in] f_atom       Atom to use for fragment jobs
- * @return 0 on success, error code on failure
+ * @return  MALI_ERROR_NONE on success, error code on failure
  */
-static int kbasep_replay_parse_payload(struct kbase_context *kctx,
-					      struct kbase_jd_atom *replay_atom,
-					      struct base_jd_atom_v2 *t_atom,
-					      struct base_jd_atom_v2 *f_atom)
+static mali_error kbasep_replay_parse_payload(kbase_context *kctx, 
+					      kbase_jd_atom *replay_atom,
+					      base_jd_atom_v2 *t_atom,
+					      base_jd_atom_v2 *f_atom)
 {
 	base_jd_replay_payload *payload;
-	u64 next;
-	u64 prev_jc = 0;
+	mali_addr64 next;
+	mali_addr64 prev_jc = 0;
 	u16 hw_job_id_offset = 0;
-	int ret = -EINVAL;
-	struct kbase_vmap_struct map;
+	mali_error ret = MALI_ERROR_FUNCTION_FAILED;
+	u64 phys_addr;
+	struct device *dev = kctx->kbdev->dev;
 
-	dev_dbg(kctx->kbdev->dev, "kbasep_replay_parse_payload: replay_atom->jc = %llx sizeof(payload) = %zu\n",
-			replay_atom->jc, sizeof(payload));
+	dev_dbg(dev,
+			"kbasep_replay_parse_payload: replay_atom->jc = %llx  "
+			"sizeof(payload) = %d\n",
+					     replay_atom->jc, sizeof(payload));
 
-	payload = kbase_vmap(kctx, replay_atom->jc, sizeof(*payload), &map);
+	kbase_gpu_vm_lock(kctx);
+
+	payload = kbasep_map_page_sync(kctx, replay_atom->jc, &phys_addr);
 
 	if (!payload) {
-		dev_err(kctx->kbdev->dev, "kbasep_replay_parse_payload: failed to map payload into kernel space\n");
-		return -EINVAL;
+		kbase_gpu_vm_unlock(kctx);
+		dev_err(dev, "kbasep_replay_parse_payload: failed to map payload into kernel space\n");
+		return MALI_ERROR_FUNCTION_FAILED;
 	}
 
 #ifdef CONFIG_MALI_DEBUG
-	dev_dbg(kctx->kbdev->dev, "kbasep_replay_parse_payload: payload=%p\n", payload);
-	dev_dbg(kctx->kbdev->dev, "Payload structure:\n"
-				  "tiler_jc_list            = %llx\n"
-				  "fragment_jc              = %llx\n"
-				  "tiler_heap_free          = %llx\n"
-				  "fragment_hierarchy_mask  = %x\n"
-				  "tiler_hierarchy_mask     = %x\n"
-				  "hierarchy_default_weight = %x\n"
-				  "tiler_core_req           = %x\n"
-				  "fragment_core_req        = %x\n",
+	dev_dbg(dev, "kbasep_replay_parse_payload: payload=%p\n", payload);
+	dev_dbg(dev, "Payload structure:\n"
+					"tiler_jc_list            = %llx\n"
+					"fragment_jc              = %llx\n"
+					"tiler_heap_free          = %llx\n"
+					"fragment_hierarchy_mask  = %x\n"
+					"tiler_hierarchy_mask     = %x\n"
+					"hierarchy_default_weight = %x\n"
+					"tiler_core_req           = %x\n"
+					"fragment_core_req        = %x\n",
 							payload->tiler_jc_list,
 							  payload->fragment_jc,
 						      payload->tiler_heap_free,
@@ -798,26 +903,23 @@ static int kbasep_replay_parse_payload(struct kbase_context *kctx,
 			      ~BASE_JD_REQ_COHERENT_GROUP) != BASE_JD_REQ_FS ||
 	     t_atom->core_req & BASE_JD_REQ_EXTERNAL_RESOURCES ||
 	     f_atom->core_req & BASE_JD_REQ_EXTERNAL_RESOURCES) {
-		dev_err(kctx->kbdev->dev, "Invalid core requirements\n");
+		dev_err(dev, "Invalid core requirements\n");
 		goto out;
 	}
-
+	
 	/* Process tiler job chains */
 	next = payload->tiler_jc_list;
 	if (!next) {
-		dev_err(kctx->kbdev->dev, "Invalid tiler JC list\n");
+		dev_err(dev, "Invalid tiler JC list\n");
 		goto out;
 	}
 
 	while (next) {
-		base_jd_replay_jc *jc_struct;
-		struct kbase_vmap_struct jc_map;
-		u64 jc;
-
-		jc_struct = kbase_vmap(kctx, next, sizeof(*jc_struct), &jc_map);
+		base_jd_replay_jc *jc_struct = kbasep_map_page(kctx, next, NULL);
+		mali_addr64 jc;
 
 		if (!jc_struct) {
-			dev_err(kctx->kbdev->dev, "Failed to map jc struct\n");
+			dev_err(dev, "Failed to map jc struct\n");
 			goto out;
 		}
 
@@ -826,20 +928,21 @@ static int kbasep_replay_parse_payload(struct kbase_context *kctx,
 		if (next)
 			jc_struct->jc = 0;
 
-		kbase_vunmap(kctx, &jc_map);
+		kbasep_unmap_page(jc_struct);
 
 		if (jc) {
 			u16 max_hw_job_id = 0;
 
 			if (kbasep_replay_find_hw_job_id(kctx, jc,
-					&max_hw_job_id) != 0)
+					    &max_hw_job_id) != MALI_ERROR_NONE)
 				goto out;
 
 			if (kbasep_replay_parse_jc(kctx, jc, prev_jc,
-					payload->tiler_heap_free,
-					payload->tiler_hierarchy_mask,
-					payload->hierarchy_default_weight,
-					hw_job_id_offset, false) != 0) {
+					     payload->tiler_heap_free,
+					     payload->tiler_hierarchy_mask,
+					     payload->hierarchy_default_weight,
+				             hw_job_id_offset, MALI_FALSE) !=
+							     MALI_ERROR_NONE) {
 				goto out;
 			}
 
@@ -853,214 +956,29 @@ static int kbasep_replay_parse_payload(struct kbase_context *kctx,
 	/* Process fragment job chain */
 	f_atom->jc = payload->fragment_jc;
 	if (kbasep_replay_parse_jc(kctx, payload->fragment_jc, 0,
-			payload->tiler_heap_free,
-			payload->fragment_hierarchy_mask,
-			payload->hierarchy_default_weight, 0,
-			true) != 0) {
+					 payload->tiler_heap_free,
+					 payload->fragment_hierarchy_mask,
+					 payload->hierarchy_default_weight, 0,
+					       MALI_TRUE) != MALI_ERROR_NONE) {
 		goto out;
 	}
 
 	if (!t_atom->jc || !f_atom->jc) {
-		dev_err(kctx->kbdev->dev, "Invalid payload\n");
+		dev_err(dev, "Invalid payload\n");
 		goto out;
 	}
 
-	dev_dbg(kctx->kbdev->dev, "t_atom->jc=%llx f_atom->jc=%llx\n",
-			t_atom->jc, f_atom->jc);
-	ret = 0;
+	dev_dbg(dev, "t_atom->jc=%llx f_atom->jc=%llx\n",
+						       t_atom->jc, f_atom->jc);
+	ret = MALI_ERROR_NONE;
 
-out:
-	kbase_vunmap(kctx, &map);
+out:	
+	kbasep_unmap_page_sync(payload, phys_addr);
+
+	kbase_gpu_vm_unlock(kctx);
 
 	return ret;
 }
-
-static void kbase_replay_process_worker(struct work_struct *data)
-{
-	struct kbase_jd_atom *katom;
-	struct kbase_context *kctx;
-	struct kbase_jd_context *jctx;
-	bool need_to_try_schedule_context = false;
-
-	struct base_jd_atom_v2 t_atom, f_atom;
-	struct kbase_jd_atom *t_katom, *f_katom;
-	base_jd_prio atom_prio;
-
-	katom = container_of(data, struct kbase_jd_atom, work);
-	kctx = katom->kctx;
-	jctx = &kctx->jctx;
-
-	mutex_lock(&jctx->lock);
-
-	atom_prio = kbasep_js_sched_prio_to_atom_prio(katom->sched_priority);
-
-	if (kbasep_replay_create_atoms(
-			kctx, &t_atom, &f_atom, atom_prio) != 0) {
-		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
-		goto out;
-	}
-
-	t_katom = &jctx->atoms[t_atom.atom_number];
-	f_katom = &jctx->atoms[f_atom.atom_number];
-
-	if (kbasep_replay_parse_payload(kctx, katom, &t_atom, &f_atom) != 0) {
-		kbasep_release_katom(kctx, t_atom.atom_number);
-		kbasep_release_katom(kctx, f_atom.atom_number);
-		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
-		goto out;
-	}
-
-	kbasep_replay_reset_softjob(katom, f_katom);
-
-	need_to_try_schedule_context |= jd_submit_atom(kctx, &t_atom, t_katom);
-	if (t_katom->event_code == BASE_JD_EVENT_JOB_INVALID) {
-		dev_err(kctx->kbdev->dev, "Replay failed to submit atom\n");
-		kbasep_release_katom(kctx, f_atom.atom_number);
-		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
-		goto out;
-	}
-	need_to_try_schedule_context |= jd_submit_atom(kctx, &f_atom, f_katom);
-	if (f_katom->event_code == BASE_JD_EVENT_JOB_INVALID) {
-		dev_err(kctx->kbdev->dev, "Replay failed to submit atom\n");
-		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
-		goto out;
-	}
-
-	katom->event_code = BASE_JD_EVENT_DONE;
-
-out:
-	if (katom->event_code != BASE_JD_EVENT_DONE) {
-		kbase_disjoint_state_down(kctx->kbdev);
-
-		need_to_try_schedule_context |= jd_done_nolock(katom);
-	}
-
-	if (need_to_try_schedule_context)
-		kbase_js_sched_all(kctx->kbdev);
-
-	mutex_unlock(&jctx->lock);
-}
-
-/**
- * @brief Check job replay fault
- *
- * This will read the job payload, checks fault type and source, then decides
- * whether replay is required.
- *
- * @param[in] katom       The atom to be processed
- * @return  true (success) if replay required or false on failure.
- */
-static bool kbase_replay_fault_check(struct kbase_jd_atom *katom)
-{
-	struct kbase_context *kctx = katom->kctx;
-	struct device *dev = kctx->kbdev->dev;
-	base_jd_replay_payload *payload;
-	u64 job_header;
-	u64 job_loop_detect;
-	struct job_head *job;
-	struct kbase_vmap_struct job_map;
-	struct kbase_vmap_struct map;
-	bool err = false;
-
-	/* Replay job if fault is of type BASE_JD_EVENT_JOB_WRITE_FAULT or
-	 * if force_replay is enabled.
-	 */
-	if (BASE_JD_EVENT_TERMINATED == katom->event_code) {
-		return false;
-	} else if (BASE_JD_EVENT_JOB_WRITE_FAULT == katom->event_code) {
-		return true;
-	} else if (BASE_JD_EVENT_FORCE_REPLAY == katom->event_code) {
-		katom->event_code = BASE_JD_EVENT_DATA_INVALID_FAULT;
-		return true;
-	} else if (BASE_JD_EVENT_DATA_INVALID_FAULT != katom->event_code) {
-		/* No replay for faults of type other than
-		 * BASE_JD_EVENT_DATA_INVALID_FAULT.
-		 */
-		return false;
-	}
-
-	/* Job fault is BASE_JD_EVENT_DATA_INVALID_FAULT, now scan fragment jc
-	 * to find out whether the source of exception is POLYGON_LIST. Replay
-	 * is required if the source of fault is POLYGON_LIST.
-	 */
-	payload = kbase_vmap(kctx, katom->jc, sizeof(*payload), &map);
-	if (!payload) {
-		dev_err(dev, "kbase_replay_fault_check: failed to map payload.\n");
-		return false;
-	}
-
-#ifdef CONFIG_MALI_DEBUG
-	dev_dbg(dev, "kbase_replay_fault_check: payload=%p\n", payload);
-	dev_dbg(dev, "\nPayload structure:\n"
-		     "fragment_jc              = 0x%llx\n"
-		     "fragment_hierarchy_mask  = 0x%x\n"
-		     "fragment_core_req        = 0x%x\n",
-		     payload->fragment_jc,
-		     payload->fragment_hierarchy_mask,
-		     payload->fragment_core_req);
-#endif
-	/* Process fragment job chain */
-	job_header      = (u64) payload->fragment_jc;
-	job_loop_detect = job_header;
-	while (job_header) {
-		job = kbase_vmap(kctx, job_header, sizeof(*job), &job_map);
-		if (!job) {
-			dev_err(dev, "failed to map jc\n");
-			/* unmap payload*/
-			kbase_vunmap(kctx, &map);
-			return false;
-		}
-
-
-#ifdef CONFIG_MALI_DEBUG
-		dev_dbg(dev, "\njob_head structure:\n"
-			     "Source ID:0x%x Access:0x%x Exception:0x%x\n"
-			     "at job addr               = %p\n"
-			     "not_complete_index        = 0x%x\n"
-			     "fault_addr                = 0x%llx\n"
-			     "flags                     = 0x%x\n"
-			     "index                     = 0x%x\n"
-			     "dependencies              = 0x%x,0x%x\n",
-			     JOB_SOURCE_ID(job->status),
-			     ((job->status >> 8) & 0x3),
-			     (job->status  & 0xFF),
-			     job,
-			     job->not_complete_index,
-			     job->fault_addr,
-			     job->flags,
-			     job->index,
-			     job->dependencies[0],
-			     job->dependencies[1]);
-#endif
-
-		/* Replay only when the polygon list reader caused the
-		 * DATA_INVALID_FAULT */
-		if ((BASE_JD_EVENT_DATA_INVALID_FAULT == katom->event_code) &&
-		    (JOB_POLYGON_LIST == JOB_SOURCE_ID(job->status))) {
-			err = true;
-			kbase_vunmap(kctx, &job_map);
-			break;
-		}
-
-		/* Move on to next fragment job in the list */
-		if (job->flags & JOB_FLAG_DESC_SIZE)
-			job_header = job->next._64;
-		else
-			job_header = job->next._32;
-
-		kbase_vunmap(kctx, &job_map);
-
-		/* Job chain loop detected */
-		if (job_header == job_loop_detect)
-			break;
-	}
-
-	/* unmap payload*/
-	kbase_vunmap(kctx, &map);
-
-	return err;
-}
-
 
 /**
  * @brief Process a replay job
@@ -1072,63 +990,80 @@ static bool kbase_replay_fault_check(struct kbase_jd_atom *katom)
  * will have been reset to KBASE_JD_ATOM_STATE_QUEUED.
  *
  * @param[in] katom  The atom to be processed
- * @return           false if the atom has completed
- *                   true if the atom is replaying jobs
+ * @return           MALI_REPLAY_STATUS_COMPLETE  if the atom has completed
+ *                   MALI_REPLAY_STATUS_REPLAYING if the atom is replaying jobs
+ *                   Set MALI_REPLAY_FLAG_JS_RESCHED if 
+ *                   kbasep_js_try_schedule_head_ctx required
  */
-bool kbase_replay_process(struct kbase_jd_atom *katom)
+int kbase_replay_process(kbase_jd_atom *katom)
 {
-	struct kbase_context *kctx = katom->kctx;
-	struct kbase_jd_context *jctx = &kctx->jctx;
+	kbase_context *kctx = katom->kctx;
+	kbase_jd_context *jctx = &kctx->jctx;
+	mali_bool need_to_try_schedule_context = MALI_FALSE;
+	base_jd_atom_v2 t_atom, f_atom;
+	kbase_jd_atom *t_katom, *f_katom;
+	struct device *dev = kctx->kbdev->dev;
 
 	if (katom->event_code == BASE_JD_EVENT_DONE) {
-		dev_dbg(kctx->kbdev->dev, "Previous job succeeded - not replaying\n");
-
-		if (katom->retry_count)
-			kbase_disjoint_state_down(kctx->kbdev);
-
-		return false;
+		dev_dbg(dev, "Previous job succeeded - not replaying\n");
+		return MALI_REPLAY_STATUS_COMPLETE;
 	}
 
 	if (jctx->sched_info.ctx.is_dying) {
-		dev_dbg(kctx->kbdev->dev, "Not replaying; context is dying\n");
-
-		if (katom->retry_count)
-			kbase_disjoint_state_down(kctx->kbdev);
-
-		return false;
+		dev_dbg(dev, "Not replaying; context is dying\n");
+		return MALI_REPLAY_STATUS_COMPLETE;
 	}
 
-	/* Check job exception type and source before replaying. */
-	if (!kbase_replay_fault_check(katom)) {
-		dev_dbg(kctx->kbdev->dev,
-			"Replay cancelled on event %x\n", katom->event_code);
-		/* katom->event_code is already set to the failure code of the
-		 * previous job.
-		 */
-		return false;
-	}
-
-	dev_warn(kctx->kbdev->dev, "Replaying jobs retry=%d\n",
-			katom->retry_count);
+	dev_warn(dev, "Replaying jobs retry=%d\n", katom->retry_count);
 
 	katom->retry_count++;
-
 	if (katom->retry_count > BASEP_JD_REPLAY_LIMIT) {
-		dev_err(kctx->kbdev->dev, "Replay exceeded limit - failing jobs\n");
-
-		kbase_disjoint_state_down(kctx->kbdev);
-
+		dev_err(dev, "Replay exceeded limit - failing jobs\n");
 		/* katom->event_code is already set to the failure code of the
 		   previous job */
-		return false;
+		return MALI_REPLAY_STATUS_COMPLETE;
 	}
 
-	/* only enter the disjoint state once for the whole time while the replay is ongoing */
-	if (katom->retry_count == 1)
-		kbase_disjoint_state_up(kctx->kbdev);
+	if (kbasep_replay_create_atoms(kctx, &t_atom, &f_atom,
+				       katom->nice_prio) != MALI_ERROR_NONE) {
+		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
+		return MALI_REPLAY_STATUS_COMPLETE;
+	}
 
-	INIT_WORK(&katom->work, kbase_replay_process_worker);
-	queue_work(kctx->event_workq, &katom->work);
+	t_katom = &jctx->atoms[t_atom.atom_number];
+	f_katom = &jctx->atoms[f_atom.atom_number];
 
-	return true;
+	if (kbasep_replay_parse_payload(kctx, katom, &t_atom, &f_atom) !=
+							     MALI_ERROR_NONE) {
+		kbasep_release_katom(kctx, t_atom.atom_number);
+		kbasep_release_katom(kctx, f_atom.atom_number);
+		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
+		return MALI_REPLAY_STATUS_COMPLETE;
+	}
+
+	kbasep_replay_reset_softjob(katom, f_katom);
+
+	need_to_try_schedule_context |= jd_submit_atom(kctx, &t_atom, t_katom);
+	if (t_katom->event_code == BASE_JD_EVENT_JOB_INVALID) {
+		dev_err(dev, "Replay failed to submit atom\n");
+		kbasep_release_katom(kctx, f_atom.atom_number);
+		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
+		katom->status = KBASE_JD_ATOM_STATE_COMPLETED;
+		return MALI_REPLAY_STATUS_COMPLETE;
+	}
+	need_to_try_schedule_context |= jd_submit_atom(kctx, &f_atom, f_katom);
+	if (f_katom->event_code == BASE_JD_EVENT_JOB_INVALID) {
+		dev_err(dev, "Replay failed to submit atom\n");
+		katom->event_code = BASE_JD_EVENT_JOB_CANCELLED;
+		katom->status = KBASE_JD_ATOM_STATE_COMPLETED;
+		return MALI_REPLAY_STATUS_COMPLETE;
+	}
+
+	katom->event_code = BASE_JD_EVENT_DONE;
+
+	if (need_to_try_schedule_context)
+		return MALI_REPLAY_STATUS_REPLAYING | 
+						MALI_REPLAY_FLAG_JS_RESCHED;
+	return MALI_REPLAY_STATUS_REPLAYING;
 }
+

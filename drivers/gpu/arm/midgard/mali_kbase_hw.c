@@ -1,6 +1,6 @@
 /*
  *
- * (C) COPYRIGHT 2012-2015 ARM Limited. All rights reserved.
+ * (C) COPYRIGHT ARM Limited. All rights reserved.
  *
  * This program is free software and is provided to you under the terms of the
  * GNU General Public License version 2 as published by the Free Software
@@ -17,48 +17,32 @@
 
 
 
-/*
+/**
+ * @file
  * Run-time work-arounds helpers
  */
 
-#include <mali_base_hwconfig_features.h>
-#include <mali_base_hwconfig_issues.h>
+#include <mali_base_hwconfig.h>
 #include <mali_midg_regmap.h>
 #include "mali_kbase.h"
 #include "mali_kbase_hw.h"
 
-void kbase_hw_set_features_mask(struct kbase_device *kbdev)
+void kbase_hw_set_features_mask(kbase_device *kbdev)
 {
-	const enum base_hw_feature *features;
+	const base_hw_feature *features;
 	u32 gpu_id;
 
 	gpu_id = kbdev->gpu_props.props.raw_props.gpu_id;
-	gpu_id &= GPU_ID_VERSION_PRODUCT_ID;
-	gpu_id = gpu_id >> GPU_ID_VERSION_PRODUCT_ID_SHIFT;
 
 	switch (gpu_id) {
-	case GPU_ID_PI_TFRX:
-		/* FALLTHROUGH */
-	case GPU_ID_PI_T86X:
-		features = base_hw_features_tFxx;
-		break;
-	case GPU_ID_PI_T83X:
-		features = base_hw_features_t83x;
-		break;
-	case GPU_ID_PI_T82X:
-		features = base_hw_features_t82x;
-		break;
-	case GPU_ID_PI_T76X:
+	case GPU_ID_MAKE(GPU_ID_PI_T76X, 0, 0, 0):
+	case GPU_ID_MAKE(GPU_ID_PI_T76X, 0, 0, 1):
+	case GPU_ID_MAKE(GPU_ID_PI_T76X, 0, 1, 1):
+	case GPU_ID_MAKE(GPU_ID_PI_T76X, 0, 1, 9):
+	case GPU_ID_MAKE(GPU_ID_PI_T76X, 0, 2, 1):
+	case GPU_ID_MAKE(GPU_ID_PI_T76X, 0, 3, 1):
+	case GPU_ID_MAKE(GPU_ID_PI_T76X, 1, 0, 0):
 		features = base_hw_features_t76x;
-		break;
-	case GPU_ID_PI_T72X:
-		features = base_hw_features_t72x;
-		break;
-	case GPU_ID_PI_T62X:
-		features = base_hw_features_t62x;
-		break;
-	case GPU_ID_PI_T60X:
-		features = base_hw_features_t60x;
 		break;
 	default:
 		features = base_hw_features_generic;
@@ -69,9 +53,9 @@ void kbase_hw_set_features_mask(struct kbase_device *kbdev)
 		set_bit(*features, &kbdev->hw_features_mask[0]);
 }
 
-int kbase_hw_set_issues_mask(struct kbase_device *kbdev)
+mali_error kbase_hw_set_issues_mask(kbase_device *kbdev)
 {
-	const enum base_hw_issue *issues;
+	const base_hw_issue *issues;
 	u32 gpu_id;
 	u32 impl_tech;
 
@@ -125,79 +109,27 @@ int kbase_hw_set_issues_mask(struct kbase_device *kbdev)
 		case GPU_ID_MAKE(GPU_ID_PI_T72X, 1, 0, 0):
 			issues = base_hw_issues_t72x_r1p0;
 			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T72X, 1, 1, 0):
-			issues = base_hw_issues_t72x_r1p1;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_TFRX, 0, 1, 2):
-			issues = base_hw_issues_tFRx_r0p1;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_TFRX, 0, 2, 0):
-			issues = base_hw_issues_tFRx_r0p2;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_TFRX, 1, 0, 0):
-			issues = base_hw_issues_tFRx_r1p0;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_TFRX, 2, 0, 0):
-			issues = base_hw_issues_tFRx_r2p0;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T86X, 0, 2, 0):
-			issues = base_hw_issues_t86x_r0p2;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T86X, 1, 0, 0):
-			issues = base_hw_issues_t86x_r1p0;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T86X, 2, 0, 0):
-			issues = base_hw_issues_t86x_r2p0;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T83X, 0, 1, 0):
-			issues = base_hw_issues_t83x_r0p1;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T83X, 1, 0, 0):
-			issues = base_hw_issues_t83x_r1p0;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T82X, 0, 0, 0):
-			issues = base_hw_issues_t82x_r0p0;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T82X, 0, 1, 0):
-			issues = base_hw_issues_t82x_r0p1;
-			break;
-		case GPU_ID_MAKE(GPU_ID_PI_T82X, 1, 0, 0):
-			issues = base_hw_issues_t82x_r1p0;
-			break;
 		default:
 			dev_err(kbdev->dev, "Unknown GPU ID %x", gpu_id);
-			return -EINVAL;
+			return MALI_ERROR_FUNCTION_FAILED;
 		}
 	} else {
 		/* Software model */
 		switch (gpu_id >> GPU_ID_VERSION_PRODUCT_ID_SHIFT) {
 		case GPU_ID_PI_T60X:
-			issues = base_hw_issues_model_t60x;
-			break;
 		case GPU_ID_PI_T62X:
-			issues = base_hw_issues_model_t62x;
+			issues = base_hw_issues_model_t6xx;
 			break;
 		case GPU_ID_PI_T72X:
 			issues = base_hw_issues_model_t72x;
 			break;
 		case GPU_ID_PI_T76X:
-			issues = base_hw_issues_model_t76x;
+			issues = base_hw_issues_model_t7xx;
 			break;
-		case GPU_ID_PI_TFRX:
-			issues = base_hw_issues_model_tFRx;
-			break;
-		case GPU_ID_PI_T86X:
-			issues = base_hw_issues_model_t86x;
-			break;
-		case GPU_ID_PI_T83X:
-			issues = base_hw_issues_model_t83x;
-			break;
-		case GPU_ID_PI_T82X:
-			issues = base_hw_issues_model_t82x;
-			break;
+
 		default:
 			dev_err(kbdev->dev, "Unknown GPU ID %x", gpu_id);
-			return -EINVAL;
+			return MALI_ERROR_FUNCTION_FAILED;
 		}
 	}
 
@@ -206,5 +138,5 @@ int kbase_hw_set_issues_mask(struct kbase_device *kbdev)
 	for (; *issues != BASE_HW_ISSUE_END; issues++)
 		set_bit(*issues, &kbdev->hw_issues_mask[0]);
 
-	return 0;
+	return MALI_ERROR_NONE;
 }

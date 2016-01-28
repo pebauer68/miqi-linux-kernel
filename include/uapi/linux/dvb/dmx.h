@@ -145,6 +145,7 @@ struct dmx_stc {
 #define DMX_SET_FILTER           _IOW('o', 43, struct dmx_sct_filter_params)
 #define DMX_SET_PES_FILTER       _IOW('o', 44, struct dmx_pes_filter_params)
 #define DMX_SET_BUFFER_SIZE      _IO('o', 45)
+#define DMX_GET_BUFFER_SIZE      _IOR('o', 46, int)
 #define DMX_GET_PES_PIDS         _IOR('o', 47, __u16[5])
 #define DMX_GET_CAPS             _IOR('o', 48, dmx_caps_t)
 #define DMX_SET_SOURCE           _IOW('o', 49, dmx_source_t)

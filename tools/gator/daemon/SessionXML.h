@@ -1,5 +1,5 @@
 /**
- * Copyright (C) ARM Limited 2010-2015. All rights reserved.
+ * Copyright (C) ARM Limited 2010-2014. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -14,13 +14,12 @@
 struct ImageLinkList;
 
 struct ConfigParameters {
-	// buffer mode, "streaming", "low", "normal", "high" defines oneshot and buffer size
-	char buffer_mode[64];
-	// capture mode, "high", "normal", or "low"
-	char sample_rate[64];
-	// whether stack unwinding is performed
-	bool call_stack_unwinding;
+	char buffer_mode[64];	// buffer mode, "streaming", "low", "normal", "high" defines oneshot and buffer size
+	char sample_rate[64];	// capture mode, "high", "normal", or "low"
+	int duration;		// length of profile in seconds
+	bool call_stack_unwinding;	// whether stack unwinding is performed
 	int live_rate;
+	struct ImageLinkList *images;	// linked list of image strings
 };
 
 class SessionXML {
@@ -31,6 +30,7 @@ public:
 	ConfigParameters parameters;
 private:
 	const char *mSessionXML;
+	const char *mPath;
 	void sessionTag(mxml_node_t *tree, mxml_node_t *node);
 	void sessionImage(mxml_node_t *node);
 

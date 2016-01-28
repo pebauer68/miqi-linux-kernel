@@ -2,7 +2,7 @@
 
 #include "rk3288.dtsi"
 #include "lcd-LP097Qx1.dtsi"
-#include "vtl_ts_p977.dtsi"
+
 / {
 	fiq-debugger {
 		status = "okay";
@@ -110,7 +110,7 @@
 		dais {
 			dai0 {
 				audio-codec = <&codec_hdmi_i2s>;
-				audio-controller = <&i2s>;
+				i2s-controller = <&i2s>;
 				format = "i2s";
 				//continuous-clock;
 				//bitclock-inversion;
@@ -126,7 +126,7 @@
 		dais {
 			dai0 {
 				audio-codec = <&codec_hdmi_spdif>;
-				audio-controller = <&spdif>;
+				i2s-controller = <&spdif>;
 			};
 		};		
 	};
@@ -136,7 +136,7 @@
 		dais {
 			dai0 {
 				audio-codec = <&rt5631>;
-				audio-controller = <&i2s>;
+				i2s-controller = <&i2s>;
 				format = "i2s";
 				//continuous-clock;
 				//bitclock-inversion;
@@ -206,7 +206,7 @@
 	ignore-pm-notify;
         keep-power-in-suspend;
 	
-        vmmc-supply = <&ldo1_reg>;
+        vmmc-supply = <&rk808_ldo5_reg>;
 	status = "okay";
 };
 		
@@ -488,12 +488,6 @@
 		reg = <0x01>;
 		screen_max_x = <2048>;
 		screen_max_y = <1536>;
-        xy_swap = <0>;
-        x_reverse = <0>;
-        y_reverse = <1>;
-        x_mul = <1>;
-        y_mul = <1>;
-        bin_ver = <1>;
 		irq_gpio_number = <&gpio7 GPIO_A6 IRQ_TYPE_LEVEL_LOW>;
 		rst_gpio_number = <&gpio7 GPIO_A5 GPIO_ACTIVE_HIGH>;
 	};
@@ -505,7 +499,6 @@
 
 &fb {
 	rockchip,disp-mode = <DUAL>;
-	rockchip,uboot-logo-on = <1>;
 };
 
 &rk_screen {
@@ -517,7 +510,6 @@
 	status = "okay";
 	rockchip,mirror = <NO_MIRROR>;
 	rockchip,cabc_mode = <0>;
-	rockchip,iommu-enabled = <0>;
 	power_ctr: power_ctr {
 		rockchip,debug = <0>;
 
@@ -544,12 +536,11 @@
 &lcdc1 {
 	status = "okay";
 	rockchip,mirror = <NO_MIRROR>;
-	rockchip,iommu-enabled = <0>;
 };
 
 &hdmi {
 	status = "okay";
-	rockchip,hdmi_video_source = <DISPLAY_SOURCE_LCDC1>;
+	rockchips,hdmi_audio_source = <0>;
 };
 
 &adc {
@@ -653,7 +644,7 @@
 		/* KHz    uV */
 		200000 1000000
 		300000 1000000
-		420000 1050000
+		400000 1050000
 		533000 1100000
 		>;
 
@@ -668,13 +659,6 @@
 		SYS_STATUS_BOOST	324000
 		SYS_STATUS_ISP		533000
 		>;
-	bd-freq-table = <
-		/* bandwidth   freq */
-		5000           800000
-		3500           456000
-		2600           396000
-		2000           324000
-	>;
 	auto-freq-table = <
 		240000
 		324000
@@ -735,7 +719,7 @@
 
 		ldo1_reg: regulator@4 {
 			regulator-name= "vccio_sd";
-			regulator-min-microvolt = <1800000>;
+			regulator-min-microvolt = <3300000>;
 			regulator-max-microvolt = <3300000>;
 			
 		};
@@ -942,3 +926,4 @@
 &sdmmc0_vdd_domain{
 	regulator-name = "vcc_sd";			
 	};
+	

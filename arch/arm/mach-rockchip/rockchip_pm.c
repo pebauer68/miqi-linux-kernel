@@ -26,7 +26,7 @@ void  rkpm_ddr_regs_dump(void __iomem * base_addr,u32 start_offset,u32 end_offse
         //u32 line=0;
 
         rkpm_ddr_printascii("start from:");     
-	rkpm_ddr_printhex((unsigned long)base_addr + start_offset);
+        rkpm_ddr_printhex((u32)(base_addr +start_offset));       
         rkpm_ddr_printch('\n');
                    
         
@@ -175,12 +175,6 @@ void rkpm_set_sram_ops_ddr(rkpm_ops_void_callback ddr,rkpm_ops_void_callback re_
         p_pm_sram_ops->ddr=ddr;	
         p_pm_sram_ops->re_ddr=re_ddr;
     }
-}
-
-void rkpm_set_sram_ops_bus(rkpm_ops_void_callback bus_idle_request)
-{
-	if (p_pm_sram_ops)
-		p_pm_sram_ops->bus_idle_request = bus_idle_request;
 }
 void rkpm_set_sram_ops_printch(rkpm_ops_printch_callback printch)
 {  
@@ -402,22 +396,13 @@ void  rkpm_ddr_printhex(unsigned int hex)
 		hex <<= 4;
 	}
 }
-
-#ifdef CONFIG_ARM
-void rk_sram_suspend(void)
-{
-	RKPM_DDR_FUN(regs_pread);
-	rkpm_ddr_printascii("sram");
-	call_with_stack(p_suspend_pie_cb
-		, &rkpm_jdg_sram_ctrbits, rockchip_sram_stack);
-}
 static int rk_lpmode_enter(unsigned long arg)
 {
 
         //RKPM_DDR_PFUN(slp_setting(rkpm_jdg_sram_ctrbits),slp_setting); 
     
         RKPM_DDR_FUN(slp_setting); 
-
+                
         local_flush_tlb_all();
         flush_cache_all();
         outer_flush_all();
@@ -426,8 +411,8 @@ static int rk_lpmode_enter(unsigned long arg)
         //outer_inv_all();// ???
         //  l2x0_inv_all_pm(); //rk319x is not need
         flush_cache_all();
-
-	 rkpm_ddr_printch('d');
+        
+        rkpm_ddr_printch('d');
 
         //rkpm_udelay(3*10);
 
@@ -438,9 +423,8 @@ static int rk_lpmode_enter(unsigned long arg)
 	return 0;
 }
 
-int cpu_suspend(unsigned long arg, int (*fn)(unsigned long));
-#endif /* CONFIG_ARM */
 
+int cpu_suspend(unsigned long arg, int (*fn)(unsigned long));
 static int rkpm_enter(suspend_state_t state)
 {
 	//static u32 test_count=0;
@@ -481,13 +465,12 @@ static int rkpm_enter(suspend_state_t state)
 
         rkpm_ddr_printch('5');
 
-#ifdef CONFIG_ARM
         if(rkpm_chk_jdg_ctrbits(RKPM_CTRBITS_SOC_DLPMD))
         {   
             if(cpu_suspend(0,rk_lpmode_enter)==0)
             {
                 RKPM_DDR_FUN(slp_re_first);
-		rkpm_ddr_printch('K');
+                rkpm_ddr_printch('D');
                 //rk_soc_pm_ctr_bits_prepare();
             }	  	              
             rkpm_ddr_printch('d');          
@@ -501,10 +484,6 @@ static int rkpm_enter(suspend_state_t state)
             dsb();
             wfi();
         }
-#else
-	flush_cache_all();
-	cpu_suspend(1);
-#endif
 
         rkpm_ddr_printch('5');
 
@@ -576,15 +555,6 @@ void __init rockchip_suspend_init(void)
     suspend_set_ops(&rockchip_suspend_ops);
     return;
 }
-
-#ifndef CONFIG_ARM
-static int __init rockchip_init_suspend(void)
-{
-	suspend_set_ops(&rockchip_suspend_ops);
-	return 0;
-}
-late_initcall_sync(rockchip_init_suspend);
-#endif /* CONFIG_ARM */
 
 static enum rockchip_pm_policy pm_policy;
 static BLOCKING_NOTIFIER_HEAD(policy_notifier_list);

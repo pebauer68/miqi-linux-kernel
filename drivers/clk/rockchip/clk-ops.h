@@ -8,6 +8,8 @@
 #define MHZ			(1000UL * 1000UL)
 #define KHZ			(1000UL)
 
+#define SAFETY_FREQ             (1876*6)/7*MHZ
+
 struct clk_ops_table {
 	unsigned int 		index;
 	const struct clk_ops	*clk_ops;
@@ -25,9 +27,10 @@ const struct clk_ops *rk_get_clkops(unsigned int idx);
 
 #define clk_err(fmt, args...) printk(KERN_ERR "rkclk: "fmt, ##args)
 
-u32 cru_readl(u32 offset);
-void cru_writel(u32 val, u32 offset);
 
-u32 grf_readl(u32 offset);
+#define cru_readl(offset)	readl(RK_CRU_VIRT + (offset))
+#define cru_writel(v, o)	do {writel(v, RK_CRU_VIRT + (o)); dsb();} \
+				while (0)
+#define grf_readl(offset)	readl_relaxed(RK_GRF_VIRT + (offset))
 
 #endif /* __RK_CLKOPS_H */

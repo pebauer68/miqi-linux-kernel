@@ -52,11 +52,7 @@
 #include <linux/completion.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
-#include <linux/of.h>
-#include <linux/of_net.h>
-#include <linux/gpio.h>
-#include <linux/of_gpio.h>
-#include <linux/of_device.h>
+
 #include "rk29_vmac.h"
 
 //static struct wake_lock idlelock; /* add by lyx @ 20110302 */
@@ -770,7 +766,7 @@ static irqreturn_t vmac_intr(int irq, void *dev_instance)
 	if (unlikely(ap->shutdown))
 		dev_err(&ap->pdev->dev, "ISR during close\n");
 
-	if (unlikely((!status) & (RXINT_MASK|MDIO_MASK|ERR_MASK)))
+	if (unlikely(!status & (RXINT_MASK|MDIO_MASK|ERR_MASK)))
 		dev_err(&ap->pdev->dev, "No source of IRQ found\n");
 #endif
 
@@ -1021,8 +1017,12 @@ int vmac_open(struct net_device *dev)
 	struct phy_device *phydev;
 	unsigned int temp;
 	int err = 0;
+	struct clk *mac_clk = NULL;
+	struct clk *mac_parent = NULL;
+	struct clk *arm_clk = NULL;
 	struct rk29_vmac_platform_data *pdata = ap->pdev->dev.platform_data;
 	unsigned char current_mac[6];
+	int ret = 0;
 	struct pinctrl_state *clkout_state;
 
 	printk("enter func %s...\n", __func__);
@@ -1033,7 +1033,7 @@ int vmac_open(struct net_device *dev)
 	wake_lock_timeout(&ap->resume_lock, 5*HZ);
 
 	ap->shutdown = 0;
-
+	
 	// switch to rmii
 	printk("ap->pdev->dev.pins->p = %p\n", ap->pdev->dev.pins->p);
 	clkout_state = pinctrl_lookup_state(ap->pdev->dev.pins->p, "default");
@@ -1041,52 +1041,55 @@ int vmac_open(struct net_device *dev)
 		dev_err(&ap->pdev->dev, "no clkout pinctrl state\n");
 		goto err_out;
 	}
-
+	
 	printk("in pinctrl_select_state.\n");
 	pinctrl_select_state(ap->pdev->dev.pins->p, clkout_state);
 		
 	//set rmii ref clock 50MHz
-	pdata->clk_mac_pll_div = clk_get(&ap->pdev->dev, "clk_mac_pll_div");
-	if (IS_ERR(pdata->clk_mac_pll_div)) {
-		printk("get clk_mac_pll_div failed\n");
+	mac_clk = devm_clk_get(&ap->pdev->dev, "clk_mac");
+	/*if (IS_ERR(mac_clk))
+		mac_clk = NULL;
+	arm_clk = clk_get(NULL, "arm_pll");
+	if (IS_ERR(arm_clk))
+		arm_clk = NULL;
+	if (mac_clk) {
+		mac_parent = clk_get_parent(mac_clk);
+		if (IS_ERR(mac_parent))
+			mac_parent = NULL;
 	}
+	if (arm_clk && mac_parent && (arm_clk == mac_parent))
+		wake_lock(&idlelock);
 
-	pdata->clk_mac_ref_div = clk_get(&ap->pdev->dev, "clk_mac_ref_div");
-	if (IS_ERR(pdata->clk_mac_ref_div)) {
-		printk("get clk_mac_ref_div failed\n");
-	}
-
-	pdata->hclk_mac = clk_get(&ap->pdev->dev, "hclk_mac");
-	if (IS_ERR(pdata->hclk_mac)) {
-		printk("get hclk_mac failed\n");
-	}
-
-	clk_prepare_enable(pdata->hclk_mac);
-	clk_prepare_enable(pdata->clk_mac_pll_div);
-	clk_prepare_enable(pdata->clk_mac_ref_div);
+        if(pdata && pdata->rmii_extclk_sel && pdata->rmii_extclk_sel())
+        {
+            struct clk * mac_clkin = NULL;
+            mac_clkin = clk_get(NULL, "rmii_clkin");
+            if (IS_ERR(mac_clkin)) {
+                pr_err("mac_clkin get fail\n");
+            }
+            clk_set_parent(mac_clk, mac_clkin); 
+        }*/
+        
+	clk_set_rate(mac_clk, 50000000);
+	clk_prepare_enable(mac_clk);
+	//clk_enable(clk_get(NULL,"mii_rx"));
+	//clk_enable(clk_get(NULL,"mii_tx"));
+	//clk_enable(clk_get(NULL,"hclk_mac"));
 
 	//phy power on
 	if (pdata && pdata->rmii_power_control)
 		pdata->rmii_power_control(1);
 
-	if (gpio_is_valid(pdata->reset_io)) {
-		gpio_direction_output(pdata->reset_io, pdata->reset_io_enable);
-		gpio_set_value(pdata->reset_io, pdata->reset_io_enable);
-		msleep(20);
-		gpio_set_value(pdata->reset_io, !pdata->reset_io_enable);
-	}
-
 	msleep(1000);
 
 	vmac_hw_init(dev);
 
-//$_rbox_$_modify_$_chenxiao
 	if (is_valid_ether_addr(dev->dev_addr)){
 		strlcpy(current_mac,dev->dev_addr,6);
 	}
 
 #ifdef CONFIG_ETH_MAC_FROM_EEPROM
-	err = eeprom_read_data(0,dev->dev_addr,6);
+	ret = eeprom_read_data(0,dev->dev_addr,6);
 	if (ret != 6){
 		printk("read mac from Eeprom fail.\n");
 	}else {
@@ -1211,6 +1214,9 @@ int vmac_close(struct net_device *dev)
 {
 	struct vmac_priv *ap = netdev_priv(dev);
 	unsigned int temp;
+	struct clk *mac_clk = NULL;
+	struct clk *arm_clk = NULL;
+	struct clk *mac_parent = NULL;
 	struct rk29_vmac_platform_data *pdata = ap->pdev->dev.platform_data;
 
 	printk("enter func %s...\n", __func__);
@@ -1252,13 +1258,26 @@ int vmac_close(struct net_device *dev)
 	if (pdata && pdata->rmii_power_control)
 		pdata->rmii_power_control(0);
 
-	if (gpio_is_valid(pdata->reset_io)) {
-		gpio_set_value(pdata->reset_io, !pdata->reset_io_enable);
+	//clock close
+	/*mac_clk = clk_get(NULL, "mac_ref_div");
+	if (IS_ERR(mac_clk))
+		mac_clk = NULL;
+	if (mac_clk) {
+		mac_parent = clk_get_parent(mac_clk);
+		if (IS_ERR(mac_parent))
+			mac_parent = NULL;
 	}
+	arm_clk = clk_get(NULL, "arm_pll");
+	if (IS_ERR(arm_clk))
+		arm_clk = NULL;
 
-	clk_disable_unprepare(pdata->clk_mac_ref_div);
-	clk_disable_unprepare(pdata->clk_mac_pll_div);
-	clk_disable_unprepare(pdata->hclk_mac);
+	if (arm_clk && mac_parent && (arm_clk == mac_parent))
+		wake_unlock(&idlelock);*/
+	
+	clk_disable(clk_get(&ap->pdev->dev,"clk_mac"));
+	//clk_disable(clk_get(NULL,"mii_tx"));
+	//clk_disable(clk_get(NULL,"hclk_mac"));
+	//clk_disable(clk_get(NULL,"clk_mac_pll"));
 
 	return 0;
 }
@@ -1443,7 +1462,6 @@ static void create_multicast_filter(struct net_device *dev,
 	}
 #endif
 }
-
 static void vmac_set_multicast_list(struct net_device *dev)
 {
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 34))
@@ -1516,7 +1534,7 @@ static const struct net_device_ops vmac_netdev_ops = {
 	.ndo_do_ioctl		= vmac_ioctl,
 	.ndo_set_mac_address	= eth_mac_addr,
 	.ndo_tx_timeout		= vmac_tx_timeout,
-	.ndo_set_rx_mode	= vmac_set_multicast_list,
+	//.ndo_set_multicast_list = vmac_set_multicast_list,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_change_mtu		= eth_change_mtu,
 };
@@ -1530,31 +1548,12 @@ static int vmac_probe(struct platform_device *pdev)
 	int err;
 	struct rk29_vmac_platform_data *pdata;
 	struct device_node *np = pdev->dev.of_node;
-	enum of_gpio_flags flags;
-
+	
 	printk("vmac_probe.\n");
 	dev_dbg(&pdev->dev, "vmac_probe 1.\n");
 	
 	pdev->dev.platform_data = &board_vmac_data;
 	pdata = pdev->dev.platform_data;
-
-	pdata->reset_io = of_get_named_gpio_flags(np, "reset-gpio", 0, &flags);
-	if (!gpio_is_valid(pdata->reset_io)) {
-		printk("%s: Get reset-gpio failed.\n", __func__);
-		return -EINVAL;
-        } else {
-                err = gpio_request(pdata->reset_io, "phy_reset");
-                if (err) {
-                        pr_err("%s: ERROR: Request phy reset pin failed.\n", __func__);
-                        //return -EINVAL;
-                }
-        }
-
-	if(flags & OF_GPIO_ACTIVE_LOW) {
-		pdata->reset_io_enable = 0;
-	} else {
-		pdata->reset_io_enable = 1;
-	}
 
 	dev = alloc_etherdev(sizeof(*ap));
 	if (!dev) {
@@ -1588,7 +1587,7 @@ static int vmac_probe(struct platform_device *pdev)
 	}
 	
 	printk("mem_base = 0x%08x, mem_size = 0x%08x, irq = %d, regs = 0x%08x\n", 
-		mem_base, mem_size, irq, (unsigned int)(ap->regs));
+		mem_base, mem_size, irq, ap->regs);
 
 	/* no checksum support, hence no scatter/gather */
 	dev->features |= NETIF_F_HIGHDMA;
@@ -1692,6 +1691,25 @@ static int vmac_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static void rk29_vmac_power_off(struct net_device *dev)
+{
+	struct vmac_priv *ap = netdev_priv(dev);
+	struct rk29_vmac_platform_data *pdata = ap->pdev->dev.platform_data;
+
+	printk("enter func %s...\n", __func__);
+
+	//phy power off
+	if (pdata && pdata->rmii_power_control)
+		pdata->rmii_power_control(0);
+
+	//clock close
+	clk_disable(clk_get(&ap->pdev->dev,"clk_mac"));
+	//clk_disable(clk_get(NULL,"mii_tx"));
+	//clk_disable(clk_get(NULL,"hclk_mac"));
+	//clk_disable(clk_get(NULL,"clk_mac_pll"));
+
+}
+
 static int
 rk29_vmac_suspend(struct device *dev)
 {
@@ -1704,7 +1722,6 @@ rk29_vmac_suspend(struct device *dev)
 			netif_stop_queue(ndev);
 			netif_device_detach(ndev);
 			if (ap->suspending == 0) {
-//$_rbox_$_modify_$_chenzhi: for ethernet sleep
 #if 0
 				vmac_shutdown(ndev);
 				rk29_vmac_power_off(ndev);
@@ -1727,12 +1744,9 @@ rk29_vmac_resume(struct device *dev)
 		if (ap->open_flag == 1) {
 			netif_device_attach(ndev);
 			netif_start_queue(ndev);
-//$_rbox_$_modify_$_chenzhi: 
-//$_rbox_$_modify_$_begin
 			if (ap->suspending == 1) {
 				ap->suspending = 0;
 			}
-//$_rbox_$_modify_$_end
 		}
 	}
 	return 0;

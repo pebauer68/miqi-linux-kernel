@@ -1,9 +1,9 @@
 /*
- * "$Id: mxml-string.c 454 2014-01-05 03:25:07Z msweet $"
+ * "$Id: mxml-string.c 424 2010-12-25 16:21:50Z mike $"
  *
  * String functions for Mini-XML, a small XML-like file parsing library.
  *
- * Copyright 2003-2014 by Michael R Sweet.
+ * Copyright 2003-2010 by Michael R Sweet.
  *
  * These coded instructions, statements, and computer programs are the
  * property of Michael R Sweet and are protected by Federal copyright
@@ -11,7 +11,15 @@
  * which should have been included with this file.  If this file is
  * missing or damaged, see the license at:
  *
- *     http://www.msweet.org/projects.php/Mini-XML
+ *     http://www.minixml.org/
+ *
+ * Contents:
+ *
+ *   _mxml_snprintf()  - Format a string.
+ *   _mxml_strdup()    - Duplicate a string.
+ *   _mxml_strdupf()   - Format and duplicate a string.
+ *   _mxml_vsnprintf() - Format a string into a fixed size buffer.
+ *   _mxml_vstrdupf()  - Format and duplicate a string.
  */
 
 /*
@@ -30,7 +38,7 @@
 #  ifdef __va_copy
 #    define va_copy(dst,src) __va_copy(dst,src)
 #  else
-#    define va_copy(dst,src) memcpy(&dst, src, sizeof(va_list))
+#    define va_copy(dst,src) memcpy(&dst, &src, sizeof(va_list))
 #  endif /* __va_copy */
 #endif /* va_copy */
 
@@ -149,8 +157,7 @@ _mxml_vsnprintf(char       *buffer,	/* O - Output buffer */
 
       if (*format == '%')
       {
-        if (bufptr && bufptr < bufend)
-          *bufptr++ = *format;
+        if (bufptr && bufptr < bufend) *bufptr++ = *format;
         bytes ++;
         format ++;
 	continue;
@@ -465,5 +472,5 @@ _mxml_vstrdupf(const char *format,	/* I - Printf-style format string */
 
 
 /*
- * End of "$Id: mxml-string.c 454 2014-01-05 03:25:07Z msweet $".
+ * End of "$Id: mxml-string.c 424 2010-12-25 16:21:50Z mike $".
  */

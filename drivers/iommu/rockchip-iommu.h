@@ -29,16 +29,17 @@ struct rk_iovmm {
 struct iommu_drvdata {
 	struct list_head node; /* entry of rk_iommu_domain.clients */
 	struct device *iommu;	/*  IOMMU's device descriptor */
+	struct device *dev;	/* Owner of  IOMMU */
 	int num_res_mem;
 	int num_res_irq;
 	const char *dbgname;
 	void __iomem **res_bases;
 	int activations;
-	spinlock_t data_lock;
+	rwlock_t lock;
 	struct iommu_domain *domain; /* domain given to iommu_attach_device() */
-	unsigned int pgtable;
-	struct rk_iovmm vmm;
 	rockchip_iommu_fault_handler_t fault_handler;
+	unsigned long pgtable;
+	struct rk_iovmm vmm;
 };
 
 #ifdef CONFIG_ROCKCHIP_IOVMM
@@ -48,8 +49,8 @@ struct iommu_drvdata {
 
 struct rk_vm_region {
 	struct list_head node;
-	unsigned int start;
-	unsigned int size;
+	dma_addr_t start;
+	size_t size;
 };
 
 static inline struct rk_iovmm *rockchip_get_iovmm(struct device *dev)
@@ -74,22 +75,30 @@ static inline int rockchip_init_iovmm(struct device *iommu,
 #ifdef CONFIG_ROCKCHIP_IOMMU
 
 /**
+* rockchip_iommu_disable() - disable iommu mmu of ip
+* @owner: The device whose IOMMU is about to be disabled.
+*
+* This function disable  iommu to transfer address
+ * from virtual address to physical address
+ */
+bool rockchip_iommu_disable(struct device *owner);
+
+/**
  * rockchip_iommu_tlb_invalidate() - flush all TLB entry in iommu
  * @owner: The device whose IOMMU.
  *
  * This function flush all TLB entry in iommu
  */
-int rockchip_iommu_tlb_invalidate(struct device *owner);
-int rockchip_iommu_tlb_invalidate_global(struct device *owner);
+void rockchip_iommu_tlb_invalidate(struct device *owner);
 
 #else /* CONFIG_ROCKCHIP_IOMMU */
-static inline int rockchip_iommu_tlb_invalidate(struct device *owner)
+static inline bool rockchip_iommu_disable(struct device *owner)
 {
-	return -1;
+	return false;
 }
-static int rockchip_iommu_tlb_invalidate_global(struct device *owner)
+static inline void rockchip_iommu_tlb_invalidate(struct device *owner)
 {
-	return -1;
+	return false;
 }
 
 #endif

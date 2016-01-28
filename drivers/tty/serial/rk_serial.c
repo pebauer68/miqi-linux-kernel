@@ -79,13 +79,10 @@
 
 #define PORT_RK		90
 #define UART_USR	0x1F	/* UART Status Register */
-#define UART_USR_TX_FIFO_EMPTY		0x04 /* Transmit FIFO empty */
-#define UART_USR_TX_FIFO_NOT_FULL	0x02 /* Transmit FIFO not full */
 #define UART_USR_BUSY (1)
 #define UART_IER_PTIME	0x80	/* Programmable THRE Interrupt Mode Enable */
 #define UART_LSR_RFE	0x80    /* receive fifo error */
 #define UART_SRR		0x22    /* software reset register */
-#define UART_SFE	0x26	/* Shadow FIFO Enable */
 #define UART_RESET		0x01
 
 
@@ -249,6 +246,7 @@ struct of_rk_serial {
 	unsigned int id;
 	unsigned int use_dma;	
 	unsigned int uartclk;
+	unsigned int uartbaud;
 };
 #endif
 
@@ -330,7 +328,7 @@ static inline void serial_out(struct uart_rk_port *up, int offset, unsigned char
 	dwapb_save_out_value(up, offset, value);
 	__raw_writel(value, up->port.membase + (offset << 2));
 	if (offset != UART_TX)
-		dsb(sy);
+		dsb();
 	dwapb_check_clear_ier(up, offset);
 }
 
@@ -1425,6 +1423,16 @@ serial_rk_set_termios(struct uart_port *port, struct ktermios *termios,
 				  port->uartclk / 16 / 0xffff,
 				  port->uartclk / 16);
 
+if ( port->baud > 0 && port->line != 0)
+{
+       baud = port->baud;
+       printk("%d, baud is:%d\n",port->line,baud);
+}
+else
+{
+       printk("%d,baud is:%d\n",port->line,baud);
+}
+
 	quot = uart_get_divisor(port, baud);
 	//dev_info(up->port.dev, "uartclk:%d\n", port->uartclk/16);
 	//dev_info(up->port.dev, "baud:%d\n", baud);
@@ -1753,85 +1761,6 @@ serial_rk_console_write(struct console *co, const char *s, unsigned int count)
 	local_irq_restore(flags);
 }
 
-#ifdef CONFIG_RK_CONSOLE_THREAD
-#include <linux/kfifo.h>
-#include <linux/kthread.h>
-static struct task_struct *console_task;
-#define FIFO_SIZE SZ_512K
-static DEFINE_KFIFO(fifo, unsigned char, FIFO_SIZE);
-static bool console_thread_stop;
-
-static void console_putc(struct uart_rk_port *up, unsigned int c)
-{
-	while (!(serial_in(up, UART_USR) & UART_USR_TX_FIFO_NOT_FULL))
-		cpu_relax();
-	serial_out(up, UART_TX, c);
-}
-
-static void console_flush(struct uart_rk_port *up)
-{
-	while (!(serial_in(up, UART_USR) & UART_USR_TX_FIFO_EMPTY))
-		cpu_relax();
-}
-
-static int console_thread(void *data)
-{
-	struct uart_rk_port *up = data;
-	unsigned char c;
-
-	while (1) {
-		set_current_state(TASK_INTERRUPTIBLE);
-		schedule();
-		if (kthread_should_stop())
-			break;
-		set_current_state(TASK_RUNNING);
-		while (!console_thread_stop && serial_in(up, UART_SFE) && kfifo_get(&fifo, &c)) {
-			console_putc(up, c);
-		}
-		if (!console_thread_stop)
-			console_flush(up);
-	}
-
-	return 0;
-}
-
-static void console_write(struct console *co, const char *s, unsigned int count)
-{
-	struct uart_rk_port *up = serial_rk_console_ports[co->index];
-	unsigned int fifo_count = FIFO_SIZE;
-	unsigned char c, r = '\r';
-
-	if (console_thread_stop ||
-	    oops_in_progress ||
-	    system_state == SYSTEM_HALT ||
-	    system_state == SYSTEM_POWER_OFF ||
-	    system_state == SYSTEM_RESTART) {
-		if (!console_thread_stop) {
-			console_thread_stop = true;
-			smp_wmb();
-			console_flush(up);
-			while (fifo_count-- && kfifo_get(&fifo, &c))
-				console_putc(up, c);
-		}
-		while (count--) {
-			if (*s == '\n') {
-				console_putc(up, r);
-			}
-			console_putc(up, *s++);
-		}
-		console_flush(up);
-	} else {
-		while (count--) {
-			if (*s == '\n') {
-				kfifo_put(&fifo, &r);
-			}
-			kfifo_put(&fifo, s++);
-		}
-		wake_up_process(console_task);
-	}
-}
-#endif
-
 static int __init serial_rk_console_setup(struct console *co, char *options)
 {
 	struct uart_rk_port *up;
@@ -1850,13 +1779,6 @@ static int __init serial_rk_console_setup(struct console *co, char *options)
 	if (options)
 		uart_parse_options(options, &baud, &parity, &bits, &flow);
 
-#ifdef CONFIG_RK_CONSOLE_THREAD
-	if (!console_task) {
-		console_task = kthread_create(console_thread, up, "kconsole");
-		if (!IS_ERR(console_task))
-			co->write = console_write;
-	}
-#endif
 	return uart_set_options(&up->port, co, baud, parity, bits, flow);
 }
 
@@ -1977,6 +1899,9 @@ static int of_rk_serial_parse_dt(struct device_node *np, struct of_rk_serial *rk
 	if(!of_property_read_u32(np, "clock-frequency", &val))
 		rks->uartclk = val;
 
+	if(!of_property_read_u32(np, "current-speed", &val))
+               rks->uartbaud = val;
+
 #if USE_DMA
 	rks->use_dma = 0;
 	for(i = 0; i < 2; i++) {
@@ -2056,6 +1981,7 @@ static int serial_rk_probe(struct platform_device *pdev)
 	up->port.iobase = mem->start;
 	up->port.mapbase = mem->start;
 	up->port.irqflags = IRQF_DISABLED;
+	up->port.baud = rks.uartbaud;
 #if defined(CONFIG_CLOCK_CTRL)
 	up->port.uartclk = clk_get_rate(up->clk);
 #elif defined(CONFIG_OF)

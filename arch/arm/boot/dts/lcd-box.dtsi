@@ -32,11 +32,10 @@
                 };
 
 		disp_timings: display-timings {
-			native-mode = <&timing0>;
+			native-mode = <&timing1>;
 			timing0: timing0 {
 				screen-type = <SCREEN_RGB>;
 				out-face    = <OUT_P888>;
-				color-mode = <COLOR_YCBCR>;
 				clock-frequency = <74250000>;
 				hactive = <1280>;
 				vactive = <720>;
@@ -53,11 +52,10 @@
 				swap-rb = <0>;
 				swap-rg = <0>;
 				swap-gb = <0>;
-                     	};
-                     	timing1: timing1 {
+			};
+			timing1: timing1 {
 				screen-type = <SCREEN_RGB>;
 				out-face    = <OUT_P888>;
-				color-mode = <COLOR_YCBCR>;
 				clock-frequency = <148500000>;
 				hactive = <1920>;
 				vactive = <1080>;
@@ -74,11 +72,10 @@
 				swap-rb = <0>;
 				swap-rg = <0>;
 				swap-gb = <0>;
-                     	};
-                     	timing2: timing2 {
+			};
+			timing2: timing2 {
 				screen-type = <SCREEN_RGB>;
 				out-face    = <OUT_P888>;
-				color-mode = <COLOR_YCBCR>;
 				clock-frequency = <297000000>;
 				hactive = <3840>;
 				vactive = <2160>;
@@ -95,6 +92,6 @@
 				swap-rb = <0>;
 				swap-rg = <0>;
 				swap-gb = <0>;
-                     	};
-               };
+			};
+	   };
 };

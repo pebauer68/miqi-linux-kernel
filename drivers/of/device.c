@@ -54,11 +54,7 @@ int of_device_add(struct platform_device *ofdev)
 
 	/* name and id have to be set so that the platform bus doesn't get
 	 * confused on matching */
-#ifdef CONFIG_ARCH_ROCKCHIP
-	ofdev->name = kasprintf(GFP_KERNEL, "%s", dev_name(&ofdev->dev));
-#else
 	ofdev->name = dev_name(&ofdev->dev);
-#endif
 	ofdev->id = -1;
 
 	/* device_add will assume that this device is on the same node as
@@ -161,7 +157,7 @@ void of_device_uevent(struct device *dev, struct kobj_uevent_env *env)
 	add_uevent_var(env, "OF_COMPATIBLE_N=%d", seen);
 
 	seen = 0;
-	mutex_lock(&of_mutex);
+	mutex_lock(&of_aliases_mutex);
 	list_for_each_entry(app, &aliases_lookup, link) {
 		if (dev->of_node == app->np) {
 			add_uevent_var(env, "OF_ALIAS_%d=%s", seen,
@@ -169,7 +165,7 @@ void of_device_uevent(struct device *dev, struct kobj_uevent_env *env)
 			seen++;
 		}
 	}
-	mutex_unlock(&of_mutex);
+	mutex_unlock(&of_aliases_mutex);
 }
 
 int of_device_uevent_modalias(struct device *dev, struct kobj_uevent_env *env)

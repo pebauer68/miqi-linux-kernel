@@ -29,11 +29,9 @@
 #include <linux/rockchip/cpu.h>
 #include <linux/rockchip/dvfs.h>
 #include <asm/smp_plat.h>
+#include <asm/cpu.h>
 #include <asm/unistd.h>
 #include <asm/uaccess.h>
-#include <asm/system_misc.h>
-#include <linux/rockchip/common.h>
-#include <dt-bindings/clock/rk_system_status.h>
 #include "../../../drivers/clk/rockchip/clk-pd.h"
 
 extern void dvfs_disable_temp_limit(void);
@@ -70,7 +68,7 @@ static struct cpufreq_frequency_table *freq_table = default_freq_table;
 #define CPUFREQ_PRIVATE                 0x100
 static unsigned int no_cpufreq_access = 0;
 static unsigned int suspend_freq = 816 * 1000;
-static unsigned int suspend_volt = 1100000;
+static unsigned int suspend_volt = 1100000; // 1.1V
 static unsigned int low_battery_freq = 600 * 1000;
 static unsigned int low_battery_capacity = 5; // 5%
 static bool is_booting = true;
@@ -176,26 +174,11 @@ static int cpufreq_scale_rate_for_dvfs(struct clk *clk, unsigned long rate)
 static int cpufreq_init_cpu0(struct cpufreq_policy *policy)
 {
 	unsigned int i;
-	int ret;
-	struct regulator *vdd_gpu_regulator;
-
 	gpu_is_mali400 = cpu_is_rk3188();
 
 	clk_gpu_dvfs_node = clk_get_dvfs_node("clk_gpu");
 	if (clk_gpu_dvfs_node){
 		clk_enable_dvfs(clk_gpu_dvfs_node);
-		vdd_gpu_regulator = dvfs_get_regulator("vdd_gpu");
-		if (!IS_ERR_OR_NULL(vdd_gpu_regulator)) {
-			if (!regulator_is_enabled(vdd_gpu_regulator)) {
-				ret = regulator_enable(vdd_gpu_regulator);
-				arm_pm_restart('h', NULL);
-			}
-			/* make sure vdd_gpu_regulator is in use,
-			so it will not be disable by regulator_init_complete*/
-			ret = regulator_enable(vdd_gpu_regulator);
-			if (ret != 0)
-				arm_pm_restart('h', NULL);
-		}
 		if (gpu_is_mali400)
 			dvfs_clk_enable_limit(clk_gpu_dvfs_node, 133000000, 600000000);	
 	}
@@ -252,7 +235,15 @@ static int cpufreq_init(struct cpufreq_policy *policy)
 
 	policy->cpuinfo.transition_latency = 40 * NSEC_PER_USEC;	// make ondemand default sampling_rate to 40000
 
-	cpumask_setall(policy->cpus);
+	/*
+	 * On SMP configuartion, both processors share the voltage
+	 * and clock. So both CPUs needs to be scaled together and hence
+	 * needs software co-ordination. Use cpufreq affected_cpus
+	 * interface to handle this scenario. Additional is_smp() check
+	 * is to keep SMP_ON_UP build working.
+	 */
+	if (is_smp())
+		cpumask_setall(policy->cpus);
 
 	return 0;
 
@@ -390,41 +381,35 @@ out:
 static struct notifier_block cpufreq_pm_notifier = {
 	.notifier_call = cpufreq_pm_notifier_event,
 };
-
-int rockchip_cpufreq_reboot_limit_freq(void)
+#if 0
+static int cpufreq_reboot_notifier_event(struct notifier_block *this, unsigned long event, void *ptr)
 {
-	struct regulator *regulator;
-	int volt = 0;
-	u32 rate;
+	struct cpufreq_policy *policy = cpufreq_cpu_get(0);
 
-	dvfs_disable_temp_limit();
-	dvfs_clk_enable_limit(clk_cpu_dvfs_node, 1000*suspend_freq, 1000*suspend_freq);
-
-	rate = dvfs_clk_get_rate(clk_cpu_dvfs_node);
-	regulator = dvfs_get_regulator("vdd_arm");
-	if (regulator)
-		volt = regulator_get_voltage(regulator);
-	else
-		pr_info("cpufreq: get arm regulator failed\n");
-	pr_info("cpufreq: reboot set core rate=%lu, volt=%d\n",
-		dvfs_clk_get_rate(clk_cpu_dvfs_node), volt);
-
-	return 0;
-}
-
-static int cpufreq_reboot_notifier_event(struct notifier_block *this,
-					 unsigned long event, void *ptr)
-{
-	rockchip_set_system_status(SYS_STATUS_REBOOT);
-	rockchip_cpufreq_reboot_limit_freq();
+	if (policy) {
+		is_booting = false;
+		policy->cur++;
+		cpufreq_driver_target(policy, suspend_freq, DISABLE_FURTHER_CPUFREQ | CPUFREQ_RELATION_H);
+		cpufreq_cpu_put(policy);
+	}
 
 	return NOTIFY_OK;
 }
+#endif
+int rockchip_cpufreq_reboot_limit_freq(void)
+{
+	dvfs_disable_temp_limit();
+	dvfs_clk_enable_limit(clk_cpu_dvfs_node, 1000*suspend_freq, 1000*suspend_freq);
+	printk("cpufreq: reboot set core rate=%lu, volt=%d\n", dvfs_clk_get_rate(clk_cpu_dvfs_node), 
+		regulator_get_voltage(clk_cpu_dvfs_node->vd->regulator));
 
+	return 0;
+}
+#if 0
 static struct notifier_block cpufreq_reboot_notifier = {
 	.notifier_call = cpufreq_reboot_notifier_event,
 };
-
+#endif
 static int clk_pd_vio_notifier_call(struct notifier_block *nb, unsigned long event, void *ptr)
 {
 	switch (event) {
@@ -443,6 +428,7 @@ static int clk_pd_vio_notifier_call(struct notifier_block *nb, unsigned long eve
 static struct notifier_block clk_pd_vio_notifier = {
 	.notifier_call = clk_pd_vio_notifier_call,
 };
+
 
 static struct cpufreq_driver cpufreq_driver = {
 	.flags = CPUFREQ_CONST_LOOPS,
@@ -467,7 +453,6 @@ static int __init cpufreq_driver_init(void)
 			clk_enable_dvfs(aclk_vio1_dvfs_node);
 		}
 	}
-	register_reboot_notifier(&cpufreq_reboot_notifier);
 	register_pm_notifier(&cpufreq_pm_notifier);
 	return cpufreq_register_driver(&cpufreq_driver);
 }

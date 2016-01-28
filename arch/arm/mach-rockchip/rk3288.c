@@ -25,17 +25,16 @@
 #include <linux/of_platform.h>
 #include <linux/rockchip/common.h>
 #include <linux/rockchip/cpu.h>
-#include <linux/rockchip/cpu_axi.h>
 #include <linux/rockchip/cru.h>
 #include <linux/rockchip/dvfs.h>
 #include <linux/rockchip/grf.h>
 #include <linux/rockchip/iomap.h>
 #include <linux/rockchip/pmu.h>
-#include <linux/fb.h>
 #include <asm/cpuidle.h>
 #include <asm/cputype.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
+#include "cpu_axi.h"
 #include "loader.h"
 #define CPU 3288
 #include "sram.h"
@@ -146,9 +145,7 @@ static void __init rk3288_dt_map_io(void)
 	writel_relaxed(0x00010001, RK_GRF_VIRT + RK3288_GRF_SOC_CON2);
 
 	/* disable address remap */
-#ifndef CONFIG_ARM_TRUSTZONE
 	writel_relaxed(0x08000000, RK_SGRF_VIRT + RK3288_SGRF_SOC_CON0);
-#endif
 
 	/* enable timer7 for core */
 	writel_relaxed(0, RK3288_TIMER7_VIRT + 0x10);
@@ -164,9 +161,7 @@ static void __init rk3288_dt_map_io(void)
 	writel_relaxed(24, RK_PMU_VIRT + RK3288_PMU_GPU_PWRUP_CNT);
 
 	rk3288_boot_mode_init();
-#ifndef CONFIG_ARM_TRUSTZONE
 	rockchip_efuse_init();
-#endif
 }
 
 static const u8 pmu_st_map[] = {
@@ -439,9 +434,6 @@ static void __init rk3288_dt_init_timer(void)
 
 static void __init rk3288_reserve(void)
 {
-	/* reserve memory for uboot */
-	rockchip_uboot_mem_reserve();
-
 	/* reserve memory for ION */
 	rockchip_ion_reserve();
 }
@@ -498,47 +490,6 @@ static void __init rk3288_init_cpuidle(void)
 	if (ret)
 		pr_err("%s: failed to register cpuidle driver: %d\n", __func__, ret);
 }
-
-static int rk3288_pll_early_suspend_notifier_call(struct notifier_block *self,
-				unsigned long action, void *data)
-{
-	struct fb_event *event = data;
-	int blank_mode = *((int *)event->data);
-	static bool enable = false;
-
-	if (action == FB_EARLY_EVENT_BLANK) {
-		switch (blank_mode) {
-		case FB_BLANK_UNBLANK:
-			if (!enable) {
-				clk_prepare_enable(clk_get_sys(NULL, "clk_cpll"));
-				clk_prepare_enable(clk_get_sys(NULL, "clk_npll"));
-				enable = true;
-			}
-			break;
-		default:
-			break;
-		}
-	} else if (action == FB_EVENT_BLANK) {
-		switch (blank_mode) {
-		case FB_BLANK_POWERDOWN:
-			if (enable) {
-				clk_disable_unprepare(clk_get_sys(NULL, "clk_cpll"));
-				clk_disable_unprepare(clk_get_sys(NULL, "clk_npll"));
-				enable = false;
-			}
-			break;
-		default:
-			break;
-		}
-	}
-
-	return NOTIFY_OK;
-}
-
-static struct notifier_block rk3288_pll_early_suspend_notifier = {
-	.notifier_call = rk3288_pll_early_suspend_notifier_call,
-};
-
 #ifdef CONFIG_PM
 static void __init rk3288_init_suspend(void);
 #endif
@@ -645,11 +596,10 @@ void inline rkpm_periph_pd_dn(bool on)
 static void __init rk3288_init_suspend(void)
 {
     printk("%s\n",__FUNCTION__);
-    fb_register_client(&rk3288_pll_early_suspend_notifier);
     rockchip_suspend_init();       
     rkpm_pie_init();
     rk3288_suspend_init();
-   rkpm_set_ops_pwr_dmns(rk_pm_soc_pd_suspend,rk_pm_soc_pd_resume);
+   rkpm_set_ops_pwr_dmns(rk_pm_soc_pd_suspend,rk_pm_soc_pd_resume);  
 }
 
 #if 0
@@ -678,18 +628,13 @@ static int  __init rk3288_pm_dbg(void)
 
 static int __init rk3288_ddr_init(void)
 {
-    if (cpu_is_rk3288()
-#ifdef CONFIG_ARM_TRUSTZONE
-	&& false
-#endif
-	)
+    if (cpu_is_rk3288())
     {
-	ddr_change_freq = _ddr_change_freq;
-	ddr_round_rate = _ddr_round_rate;
-	ddr_set_auto_self_refresh = _ddr_set_auto_self_refresh;
-	ddr_bandwidth_get = _ddr_bandwidth_get;
+        ddr_change_freq = _ddr_change_freq;
+        ddr_round_rate = _ddr_round_rate;
+        ddr_set_auto_self_refresh = _ddr_set_auto_self_refresh;
 
-	ddr_init(DDR3_DEFAULT, 0);
+        ddr_init(DDR3_DEFAULT, 300);
     }
 
     return 0;

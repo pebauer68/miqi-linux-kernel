@@ -24,7 +24,6 @@
 #include <linux/of.h>
 #include <linux/of_gpio.h>
 #include <linux/miscdevice.h>
-#include <linux/hrtimer.h>
 #include <linux/platform_data/spi-rockchip.h>
 #include <asm/uaccess.h>
 
@@ -54,7 +53,6 @@ static ssize_t spi_test_write(struct file *file,
 	int i = 0;
 	struct spi_device *spi = NULL;
 	char txbuf[256],rxbuf[256];
-	ktime_t k1,k2;
 
 	printk("%s:0:bus=0,cs=0; 1:bus=0,cs=1; 2:bus=1,cs=0; 3:bus=1,cs=1; 4:bus=2,cs=0; 5:bus=2,cs=1\n",__func__);
 
@@ -82,21 +80,18 @@ static ssize_t spi_test_write(struct file *file,
 	}
 
 	spi = g_spi_test_data[nr]->spi;
-	k1 = ktime_get();
-	for(i=0; i<5000; i++)
+
+	for(i=0; i<100; i++)
 	{
 		ret = spi_write(spi, txbuf, 256);
-		ret = spi_read(spi, rxbuf, 255);
-		ret = spi_write_then_read(spi,txbuf,254,rxbuf,253);
-		ret = spi_write_and_read(spi,txbuf,rxbuf,252);
-		ret = spi_write_and_read(spi,txbuf,rxbuf,251);
-		if(i%500==0)
+		ret = spi_read(spi, rxbuf, 256);
+		ret = spi_write_then_read(spi,txbuf,256,rxbuf,256);		
+		ret = spi_write_and_read(spi,txbuf,rxbuf,256);
 		printk("%s:test %d times\n\n",__func__,i+1);
 	}
-	k2 = ktime_get();
-	k2 = ktime_sub(k2, k1);
+	
 	if(!ret)
-	printk("%s:bus_num=%d,chip_select=%d,ok cost:%lldus data rate:%d Kbits/s\n",__func__,spi->master->bus_num, spi->chip_select, ktime_to_us(k2), 1536*5000*8/(s32)ktime_to_ms(k2));
+	printk("%s:bus_num=%d,chip_select=%d,ok\n",__func__,spi->master->bus_num, spi->chip_select);
 	else
 	printk("%s:bus_num=%d,chip_select=%d,error\n",__func__,spi->master->bus_num, spi->chip_select);
 	
@@ -162,8 +157,8 @@ static int rockchip_spi_test_probe(struct spi_device *spi)
 {	
 	int ret;
 	int id = 0;
-	struct dw_spi_chip *spi_chip_data = NULL;
-	struct spi_test_data *spi_test_data = NULL;
+	static struct dw_spi_chip *spi_chip_data;
+	struct spi_test_data *spi_test_data;
 	
 	if(!spi)	
 	return -ENOMEM;

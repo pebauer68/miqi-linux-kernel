@@ -1,9 +1,9 @@
 /*
- * "$Id: mxml-index.c 451 2014-01-04 21:50:06Z msweet $"
+ * "$Id: mxml-index.c 426 2011-01-01 23:42:17Z mike $"
  *
  * Index support code for Mini-XML, a small XML-like file parsing library.
  *
- * Copyright 2003-2014 by Michael R Sweet.
+ * Copyright 2003-2011 by Michael R Sweet.
  *
  * These coded instructions, statements, and computer programs are the
  * property of Michael R Sweet and are protected by Federal copyright
@@ -11,7 +11,10 @@
  * which should have been included with this file.  If this file is
  * missing or damaged, see the license at:
  *
- *     http://www.msweet.org/projects.php/Mini-XML
+ *     http://www.minixml.org/
+ *
+ * Contents:
+ *
  */
 
 /*
@@ -655,5 +658,5 @@ index_sort(mxml_index_t *ind,		/* I - Index to sort */
 
 
 /*
- * End of "$Id: mxml-index.c 451 2014-01-04 21:50:06Z msweet $".
+ * End of "$Id: mxml-index.c 426 2011-01-01 23:42:17Z mike $".
  */

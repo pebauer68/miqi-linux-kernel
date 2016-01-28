@@ -239,7 +239,6 @@ struct mipi_dsi_screen {
 	u8 dsi_lane;
 	u8 dsi_video_mode;
 	u32 hs_tx_clk;
-	struct rk_screen *screen;
 
 	/* Operation function*/
 	int (*init)(void);

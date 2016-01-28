@@ -81,6 +81,7 @@ MODULE_PARM_DESC(dvb_mfe_wait_time, "Wait up to <mfe_wait_time> seconds on open(
 #define FESTATE_LOSTLOCK (FESTATE_ZIGZAG_FAST | FESTATE_ZIGZAG_SLOW)
 
 #define FE_ALGO_HW		1
+#define DVB_FRONTEND_WRITERS 2
 /*
  * FESTATE_IDLE. No tuning parameters have been supplied and the loop is idling.
  * FESTATE_RETUNE. Parameters have been supplied, but we have not yet performed the first tune.
@@ -155,11 +156,13 @@ static bool has_get_frontend(struct dvb_frontend *fe)
  * otherwise, a DVBv3 call will fail.
  */
 enum dvbv3_emulation_type {
-	DVBV3_UNKNOWN,
+	DVBV3_UNKNOWN,	
 	DVBV3_QPSK,
 	DVBV3_QAM,
 	DVBV3_OFDM,
 	DVBV3_ATSC,
+	DVBV3_ISDB_ONESEG,
+	DVBV3_ISDB_FULLSEG,	
 };
 
 static enum dvbv3_emulation_type dvbv3_type(u32 delivery_system)
@@ -176,9 +179,10 @@ static enum dvbv3_emulation_type dvbv3_type(u32 delivery_system)
 		return DVBV3_QPSK;
 	case SYS_DVBT:
 	case SYS_DVBT2:
-	case SYS_ISDBT:
 	case SYS_DTMB:
 		return DVBV3_OFDM;
+	case SYS_ISDBT:		
+		return DVBV3_ISDB_FULLSEG;		
 	case SYS_ATSC:
 	case SYS_ATSCMH:
 	case SYS_DVBC_ANNEX_B:
@@ -568,7 +572,7 @@ static int dvb_frontend_is_exiting(struct dvb_frontend *fe)
 	if (fepriv->exit != DVB_FE_NO_EXIT)
 		return 1;
 
-	if (fepriv->dvbdev->writers == 1)
+	if (fepriv->dvbdev->writers == DVB_FRONTEND_WRITERS)
 		if (time_after_eq(jiffies, fepriv->release_jiffies +
 				  dvb_shutdown_timeout * HZ))
 			return 1;
@@ -1116,6 +1120,8 @@ static int dtv_property_cache_sync(struct dvb_frontend *fe,
 		c->modulation = p->u.qam.modulation;
 		break;
 	case DVBV3_OFDM:
+	case DVBV3_ISDB_FULLSEG:	
+	case DVBV3_ISDB_ONESEG:			
 		dev_dbg(fe->dvb->device, "%s: Preparing OFDM req\n", __func__);
 
 		switch (p->u.ofdm.bandwidth) {
@@ -1197,6 +1203,8 @@ static int dtv_property_legacy_params_sync(struct dvb_frontend *fe,
 		p->u.qam.modulation = c->modulation;
 		break;
 	case DVBV3_OFDM:
+	case DVBV3_ISDB_FULLSEG:	
+	case DVBV3_ISDB_ONESEG:
 		dev_dbg(fe->dvb->device, "%s: Preparing OFDM req\n", __func__);
 		switch (c->bandwidth_hz) {
 		case 10000000:
@@ -2186,6 +2194,9 @@ static int dvb_frontend_ioctl_legacy(struct file *file,
 		case DVBV3_OFDM:
 			info->type = FE_OFDM;
 			break;
+		case DVBV3_ISDB_FULLSEG:
+			info->type = FE_ISDB_FULLSEG;
+			break;		
 		default:
 			dev_err(fe->dvb->device,
 					"%s: doesn't know how to handle a DVBv3 call to delivery system %i\n",
@@ -2589,8 +2600,8 @@ int dvb_register_frontend(struct dvb_adapter* dvb,
 	struct dvb_frontend_private *fepriv;
 	static const struct dvb_device dvbdev_template = {
 		.users = ~0,
-		.writers = 1,
-		.readers = (~0)-1,
+		.writers = DVB_FRONTEND_WRITERS,
+		.readers = (~0)-DVB_FRONTEND_WRITERS,
 		.fops = &dvb_frontend_fops,
 		.kernel_ioctl = dvb_frontend_ioctl
 	};

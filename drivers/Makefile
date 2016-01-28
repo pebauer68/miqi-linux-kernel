@@ -8,8 +8,6 @@
 obj-y				+= irqchip/
 obj-y				+= bus/
 
-obj-$(CONFIG_GENERIC_PHY)	+= phy/
-
 # GPIO must come after pinctrl as gpios may need to mux pins etc
 obj-y				+= pinctrl/
 obj-y				+= gpio/
@@ -94,6 +92,7 @@ obj-$(CONFIG_INPUT)		+= input/
 obj-$(CONFIG_I2O)		+= message/
 obj-$(CONFIG_RTC_LIB)		+= rtc/
 obj-y				+= i2c/ media/
+obj-$(CONFIG_ROCKCHIP_HSADC) 	+= hsadc/
 obj-$(CONFIG_PPS)		+= pps/
 obj-$(CONFIG_PTP_1588_CLOCK)	+= ptp/
 obj-$(CONFIG_W1)		+= w1/
@@ -110,7 +109,6 @@ obj-$(CONFIG_EISA)		+= eisa/
 obj-y				+= lguest/
 obj-$(CONFIG_CPU_FREQ)		+= cpufreq/
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
-obj-$(CONFIG_CPUQUIET_FRAMEWORK)+= cpuquiet/
 obj-y				+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
 obj-y				+= leds/
@@ -159,5 +157,3 @@ obj-$(CONFIG_NTB)		+= ntb/
 
 obj-$(CONFIG_GATOR)		+= gator/
 obj-y				+= headset_observe/
-obj-$(CONFIG_CORESIGHT)		+= coresight/
-obj-$(CONFIG_ANDROID)		+= android/

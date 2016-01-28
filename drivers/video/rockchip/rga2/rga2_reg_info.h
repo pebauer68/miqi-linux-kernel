@@ -288,7 +288,6 @@
 
 int RGA2_gen_reg_info(unsigned char *base, struct rga2_req *msg);
 void RGA_MSG_2_RGA2_MSG(struct rga_req *req_rga, struct rga2_req *req);
-void RGA_MSG_2_RGA2_MSG_32(struct rga_req_32 *req_rga, struct rga2_req *req);
 
 
 

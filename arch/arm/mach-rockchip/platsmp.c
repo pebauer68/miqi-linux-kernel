@@ -97,7 +97,7 @@ static int __init rockchip_smp_prepare_bootram(void)
 	}
 
 	/* set the boot function for the bootram code */
-	if (read_cpuid_part() == ARM_CPU_PART_CORTEX_A9)
+	if (read_cpuid_part_number() == ARM_CPU_PART_CORTEX_A9)
 		rockchip_boot_fn = virt_to_phys(rockchip_a9_secondary_startup);
 	else
 		rockchip_boot_fn = virt_to_phys(secondary_startup);
@@ -148,13 +148,13 @@ static void __init rockchip_a9_smp_prepare_cpus(unsigned int max_cpus)
 static void __init rockchip_smp_prepare_cpus(unsigned int max_cpus)
 {
 	unsigned int i, cpu;
-	unsigned long l2ctlr;
+	unsigned long scuctlr;
 
 	if (scu_a9_has_base())
 		return rockchip_a9_smp_prepare_cpus(max_cpus);
 
-	asm("mrc p15, 1, %0, c9, c0, 2" : "=r" (l2ctlr));
-	ncores = ((l2ctlr >> 24) & 3) + 1;
+	asm("mrc p15, 1, %0, c9, c0, 4" : "=r" (scuctlr));
+	ncores = (scuctlr & 3) + 1;
 	cpu = MPIDR_AFFINITY_LEVEL(read_cpuid_mpidr(), 0);
 	/* Make sure that all cores except myself are really off */
 	for (i = 0; i < ncores; i++) {

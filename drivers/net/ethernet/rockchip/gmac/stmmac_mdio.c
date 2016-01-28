@@ -231,6 +231,7 @@ int stmmac_mdio_register(struct net_device *ndev)
 				ndev->name, phydev->phy_id, addr,
 				irq_str, dev_name(&phydev->dev),
 				act ? " active" : "");
+
 			if ((phydev->drv) && phydev->drv->name) {
 				pr_info("PHY driver name: %s", phydev->drv->name);
 			}

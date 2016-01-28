@@ -28,7 +28,6 @@
 #include <linux/mutex.h>
 #include <linux/regulator/machine.h>
 #include <linux/log2.h>
-#include <linux/gpio.h>
 //#include <mach/io.h>
 //#include <mach/gpio.h>
 //#include <mach/iomux.h>
@@ -36,8 +35,9 @@
 #include <linux/rockchip/cpu.h>
 #include <linux/rockchip/iomap.h>
 #include <linux/rockchip/grf.h>
-//#include <asm/gpio.h>
-//#include <asm/system.h>	
+
+#include <asm/gpio.h>
+#include <asm/system.h>	
 #include <asm/uaccess.h>
 
 #include <linux/of.h>
@@ -95,36 +95,8 @@
 *v0.0x13.0:
          1) camsys_extdev_register return failed when this dev_id has been registered;
          2) add support JPG irq connect;
-*v0.0x14.0:
-         1) camsys_extdev_register return -EBUSY when this dev_id has been registered;
-*v0.0x15.0:
-         1) check extdev name when dev_id has been registered;
-*v0.0x16.0:
-		 1) enable or disable IOMMU just depending on CONFIG_ROCKCHIP_IOMMU. 
-*v0.0x17.0:
-		 1) isp iommu status depend on vpu iommu status.
-*v0.0x18.0:
-         1) add flashlight RT8547 driver
-         2) support torch mode
-*v0.0x19.0:
-         1) set CONFIG_CAMSYS_DRV disable as default,enable in defconfig file if needed.
-*v0.0x1a.0:
-		 1) vpu_node changed from "vpu_service" to "rockchip,vpu_sub"
-*v0.0x1b.0:
-		 1) use of_find_node_by_name to get vpu node instead of of_find_compatible_node
-*v0.0x1c.0:
-         1) support rk3368. 
-*v0.0x1d.0:
-         1) enable aclk_rga for rk3368, otherwise, isp reset will cause system halted.
-*v0.0x1e.0:
-         1) dts remove aclk_rga, change aclk_isp from <clk_gates17 0> to <&clk_gates16 0>.
-         2) add rl3369 pd_isp enable/disable.
-*v0.0x1f.0:
-		 1) GPIO(gpio7 GPIO_B5) is EBUSY when register after factory reset, but after power on ,it's normal.
-*v0.0x20.0:
-         1) rk3368 camera: hold vio0 noc clock during the camera work, fixed isp iommu stall failed.
 */
-#define CAMSYS_DRIVER_VERSION                   KERNEL_VERSION(0,0x20,0)
+#define CAMSYS_DRIVER_VERSION                   KERNEL_VERSION(0,0x13,0)
 
 
 #define CAMSYS_PLATFORM_DRV_NAME                "RockChip-CamSys"
@@ -190,8 +162,8 @@ typedef struct camsys_irq_s {
 
 typedef struct camsys_meminfo_s {
     unsigned char name[32];
-    unsigned long phy_base;
-    unsigned long vir_base;
+    unsigned int phy_base;
+    unsigned int vir_base;
     unsigned int size;
     unsigned int vmas;
 
@@ -217,12 +189,8 @@ typedef struct camsys_gpio_s {
 } camsys_gpio_t;
 typedef struct camsys_flash_s {
     camsys_gpio_t        fl;
-    camsys_gpio_t        fl_en;
-    void*   ext_fsh_dev;            
-    //flash call back
 } camsys_flash_t;
 typedef struct camsys_extdev_s {
-    unsigned char            dev_name[CAMSYS_NAME_LEN];
     unsigned int             dev_id;
     camsys_regulator_t       avdd;
     camsys_regulator_t       dovdd;
@@ -281,15 +249,13 @@ typedef struct camsys_dev_s {
 
     void                  *soc;
 
-	camsys_meminfo_t     *csiphy_reg;
-
     int (*clkin_cb)(void *ptr, unsigned int on);
     int (*clkout_cb)(void *ptr,unsigned int on,unsigned int clk);
     int (*reset_cb)(void *ptr, unsigned int on);
     int (*phy_cb) (camsys_extdev_t *extdev, camsys_sysctrl_t *devctl, void* ptr);
     int (*iomux)(camsys_extdev_t *extdev,void *ptr);
     int (*platform_remove)(struct platform_device *pdev);
-    int (*flash_trigger_cb)(void *ptr,int mode , unsigned int on);
+    int (*flash_trigger_cb)(void *ptr, unsigned int on);
     int (*iommu_cb)(void *ptr,camsys_sysctrl_t *devctl);
 } camsys_dev_t;
 

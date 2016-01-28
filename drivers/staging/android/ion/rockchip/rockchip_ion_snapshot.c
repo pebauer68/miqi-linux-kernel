@@ -68,7 +68,7 @@ static const struct file_operations ion_snapshot_fops = {
 	.read = ion_snapshot_read,
 };
 
-char *rockchip_ion_snapshot_get(size_t *size)
+char *rockchip_ion_snapshot_get(unsigned *size)
 {
 	*size = LOG_BUF_LEN;
 	return ion_snapshot_buf;
@@ -79,7 +79,7 @@ int rockchip_ion_snapshot_debugfs(struct dentry* root)
 	struct dentry* last_ion_dentry;
 	struct dentry* ion_snapshot_dentry;
 
-	last_ion_dentry = debugfs_create_file("last_ion", 0664,
+	last_ion_dentry = debugfs_create_file("last_ion", S_IRUSR,
 						root,
 						NULL, &last_ion_fops);
 	if (!last_ion_dentry) {
@@ -89,7 +89,7 @@ int rockchip_ion_snapshot_debugfs(struct dentry* root)
 			path, "last_ion");
 	}
 
-	ion_snapshot_dentry = debugfs_create_file("ion_snapshot", 0664,
+	ion_snapshot_dentry = debugfs_create_file("ion_snapshot", S_IRUSR,
 						root,
 						NULL, &ion_snapshot_fops);
 	if (!ion_snapshot_dentry) {
@@ -112,7 +112,7 @@ static void * __init last_ion_vmap(phys_addr_t start, unsigned int page_count)
 		pages[i] = pfn_to_page(addr >> PAGE_SHIFT);
 	}
 	pages[page_count] = pfn_to_page(start >> PAGE_SHIFT);
-	return vmap(pages, page_count + 1, VM_MAP, pgprot_writecombine(PAGE_KERNEL));
+	return vmap(pages, page_count + 1, VM_MAP, pgprot_noncached(PAGE_KERNEL));
 }
 
 static int __init rockchip_ion_snapshot_init(void)
@@ -127,14 +127,12 @@ static int __init rockchip_ion_snapshot_init(void)
 
 	ion_snapshot_buf = last_ion_vmap(virt_to_phys(log_buf), 1 << LOG_BUF_PAGE_ORDER);
 	if (!ion_snapshot_buf) {
-		pr_err("failed to map %d pages at 0x%lx\n", 1 << LOG_BUF_PAGE_ORDER,
-			(unsigned long)virt_to_phys(log_buf));
+		pr_err("failed to map %d pages at 0x%08x\n", 1 << LOG_BUF_PAGE_ORDER, virt_to_phys(log_buf));
 		return 0;
 	}
 
-	pr_info("0x%lx map to 0x%p and copy to 0x%p (version 0.1)\n", 
-			(unsigned long)virt_to_phys(log_buf), ion_snapshot_buf,
-			last_ion_buf);
+	pr_info("0x%08x map to 0x%p and copy to 0x%p (version 0.1)\n", 
+			virt_to_phys(log_buf), ion_snapshot_buf, last_ion_buf);
 
 	memcpy(last_ion_buf, ion_snapshot_buf, LOG_BUF_LEN);
 	memset(ion_snapshot_buf, 0, LOG_BUF_LEN);

@@ -169,85 +169,6 @@ config MFD_MC13XXX_I2C
 	help
 	  Select this if your MC13xxx is connected via an I2C bus.
 
-config MFD_RT5025
-	bool "RT5025 PMIC Chip Core driver"
-	depends on I2C
-	select MFD_CORE
-	default n
-	help
-	  Enable RT5025 core driver.
-
-config MISC_RT5025
-	bool "RT5025 PMIC chip misc configuration"
-	depends on MFD_RT5025
-	default n
-	help
-	  Enable RT5025 Misc configuration.
-
-config IRQ_RT5025
-	bool "RT5025_PMIC chip irq driver"
-	depends on MFD_RT5025
-	default n
-	help
-	  Enable RT5025 IRQ configuration and interrupt.
-
-config DEBUG_RT5025
-	bool "RT5025 PMIC Chip Core Debug"
-	depends on MFD_RT5025 && DEBUG_FS
-	default n
-	help
-	  Enable RT5025 core debug driver.
-
-config MFD_RT_SHOW_INFO
-	bool "RT5025 PMIC Debug log Flag"
-	depends on MFD_RT5025
-	default n
-	help
-	  Enable the RT5025 PMIC debug log.
-
-config MFD_RT5036
-	bool "Richtek RT5036 PMIC support"
-	select MFD_CORE
-	default n
-	help
-	  Enable the RT5036 MFD driver.
-
-config MFD_RT5036_DBGINFO
-	bool "Richtek RT5036 debug message enable."
-	depends on MFD_RT5036
-	default n
-	help
-	  Enable the RT5036 debug log.
-
-config MISC_RT5036
-	bool "Richtek RT5036 MISC option driver support"
-	depends on MFD_RT5036
-	default n
-	help
-	  Enable the RT5036 Misc option driver support.
-
-config MISC_RT5036_PWRKEY
-	bool "Richtek RT5036 Power key report in Misc module"
-	depends on MISC_RT5036
-	default n
-	help
-	  Enable the RT5036 Power Key report in Misc module.
-
-config IRQ_RT5036
-	bool "Richtek RT5036 irq option driver support"
-	depends on MFD_RT5036
-	default n
-	help
-	  Enable the Rt5036 IRQ option driver support.
-
-config DEBUG_RT5036
-	bool "Richtek RT5036 PMIC DEBUGFS Support"
-	depends on DEBUG_FS && MFD_RT5036
-	default n
-	help
-	  Enable the RT5036 debugfs node that support
-	  read/write registers.
-
 config HTC_EGPIO
 	bool "HTC EGPIO support"
 	depends on GENERIC_HARDIRQS && GPIOLIB && ARM
@@ -430,10 +351,9 @@ config MFD_MAX8998
 
 config MFD_RK808
 	bool "RK808 Power Management chip"
-	depends on I2C=y
-	select REGMAP_I2C 
+	depends on I2C=y 
 	select MFD_CORE
-	select RK808_RTC
+	select RTC_RK808
 	help
 	  if you say yes here you get support for the RK808 series of
 	  Power Management chips.
@@ -442,7 +362,7 @@ config MFD_RK818
 	bool "RK818 Power Management chip"
 	depends on I2C=y 
 	select MFD_CORE
-	select RK818_RTC
+	select RTC_RK818
 	help
 	  if you say yes here you get support for the RK818 series of
 	  Power Management chips.
@@ -1233,7 +1153,7 @@ config MFD_RK1000
 	help
 	  if you say yes here you get support for the RK1000, with func as
 	  TVEncoder CODEC.
-
+		
 config MFD_RK610
 	bool "RK610(Jetta) Multimedia support"
 	depends on I2C=y && GPIOLIB

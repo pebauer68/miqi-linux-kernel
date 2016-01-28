@@ -425,10 +425,11 @@ static void giveback(struct dw_spi *dws)
 	if (next_msg && next_msg->spi != msg->spi)
 	next_msg = NULL;
 	
-	dws->cur_chip = NULL;
 	spi_finalize_current_message(dws->master);
+	dws->cur_chip = NULL;
+
 	
-	DBG_SPI("%s:line=%d,tx_left=%ld\n",__func__,__LINE__, (long)(dws->tx_end - dws->tx) / dws->n_bytes);
+	DBG_SPI("%s:line=%d,tx_left=%d\n",__func__,__LINE__, (dws->tx_end - dws->tx) / dws->n_bytes);
 }
 
 
@@ -540,7 +541,7 @@ static irqreturn_t dw_spi_irq(int irq, void *dev_id)
 /* Must be called inside pump_transfers() */
 static void poll_transfer(struct dw_spi *dws)
 {	
-	DBG_SPI("%s:len=%ld\n",__func__, (long)dws->len);
+	DBG_SPI("%s:len=%d\n",__func__, dws->len);
 	
 	do {
 		dw_writer(dws);
@@ -569,7 +570,7 @@ static void pump_transfers(unsigned long data)
 	u32 speed = 0;
 	u32 cr0 = 0;	
 	u16 dma_ctrl = 0;
-	int i = 0;
+
 
 	/* Get current state information */
 	message = dws->cur_msg;
@@ -578,12 +579,7 @@ static void pump_transfers(unsigned long data)
 	spi = message->spi;
 
 	if (unlikely(!chip->clk_div))
-	{
 		chip->clk_div = dws->max_freq / chip->speed_hz;
-		chip->clk_div = (chip->clk_div + 1) & 0xfffe;
-		chip->speed_hz = dws->max_freq / chip->clk_div;
-	}
-
 
 	if (message->state == ERROR_STATE) {
 		message->status = -EIO;
@@ -623,6 +619,7 @@ static void pump_transfers(unsigned long data)
 	cr0 = chip->cr0;
 
 	
+	DBG_SPI("%s:len=%d\n",__func__,dws->len);
 
 	/* Handle per transfer options for bpw and speed */
 	if (transfer->speed_hz) {
@@ -641,11 +638,10 @@ static void pump_transfers(unsigned long data)
 			clk_div = dws->max_freq / speed;
 			clk_div = (clk_div + 1) & 0xfffe;
 
-			chip->speed_hz = dws->max_freq / clk_div;
+			chip->speed_hz = speed;
 			chip->clk_div = clk_div;
 		}
 	}
-	DBG_SPI("%s:len=%ld,clk_div=%d,speed_hz=%d\n",__func__, (long)dws->len,chip->clk_div,chip->speed_hz);
 	if (transfer->bits_per_word) {
 		bits = transfer->bits_per_word;
 
@@ -716,6 +712,7 @@ static void pump_transfers(unsigned long data)
 		dws->transfer_handler = interrupt_transfer;
 	}
 
+
 	/*
 	 * Reprogram registers only if
 	 *	1. chip select changes
@@ -729,72 +726,54 @@ static void pump_transfers(unsigned long data)
 		if (dw_readl(dws, SPIM_CTRLR0) != cr0)
 			dw_writel(dws, SPIM_CTRLR0, cr0);
 
-
 		spi_set_clk(dws, clk_div ? clk_div : chip->clk_div);		
 		spi_chip_sel(dws, spi->chip_select);
 
-		dw_writew(dws, SPIM_CTRLR1, dws->len-1);
-
-		if (txint_level != dw_readl(dws, SPIM_TXFTLR))
+        dw_writew(dws, SPIM_CTRLR1, dws->len-1);
+		
+		if (txint_level)
 			dw_writew(dws, SPIM_TXFTLR, txint_level);
 			
-		if (rxint_level != dw_readl(dws, SPIM_RXFTLR))
+		if (rxint_level)
 		{
 			dw_writew(dws, SPIM_RXFTLR, rxint_level);
 			DBG_SPI("%s:rxint_level=%d\n",__func__,rxint_level);
 		}
+		/* Set the interrupt mask, for poll mode just diable all int */
+		spi_mask_intr(dws, 0xff);
+		if (imask)
+			spi_umask_intr(dws, imask);
 
 		/* setup DMA related registers */
 		if(dws->dma_mapped)
 		{
-			dws->dmatdlr = dws->n_bytes;
-			dws->dmardlr = dws->n_bytes - 1;
-			for(i=dws->n_bytes; i<=dws->fifo_len / 4; i++)
-			{
-				if((dws->len / dws->n_bytes) % i == 0)
-				dws->dmatdlr = i;
-			}
-
 			/* Set the interrupt mask, for poll mode just diable all int */
 			spi_mask_intr(dws, 0xff);		
 			if(dws->tx)
 			{
 				dma_ctrl |= SPI_DMACR_TX_ENABLE;		
-				dw_writew(dws, SPIM_DMATDLR, dws->dmatdlr);
+				dw_writew(dws, SPIM_DMATDLR, 8);
 				dw_writew(dws, SPIM_CTRLR1, dws->len-1);	
 			}
-
-			dws->dmardlr = (dws->dmatdlr != dws->n_bytes)?(dws->dmatdlr-1):(dws->n_bytes-1);
 			
 			if (dws->rx)
 			{
 				dma_ctrl |= SPI_DMACR_RX_ENABLE;	
-				dw_writew(dws, SPIM_DMARDLR, dws->dmardlr);
-				dw_writew(dws, SPIM_CTRLR1, dws->len-1);
+				dw_writew(dws, SPIM_DMARDLR, 0);			
+				dw_writew(dws, SPIM_CTRLR1, dws->len-1);	
 			}
 			dw_writew(dws, SPIM_DMACR, dma_ctrl);
 
-			DBG_SPI("%s:dma_ctrl=0x%x,dmatdlr=%d,dmardlr=%d\n",__func__,dw_readw(dws, SPIM_DMACR),dws->dmatdlr, dws->dmardlr);
+			DBG_SPI("%s:dma_ctrl=0x%x\n",__func__,dw_readw(dws, SPIM_DMACR));
 			
 		}
-
-		if((!dws->dma_mapped) || (dws->dma_mapped && dws->tx))
-		spi_enable_chip(dws, 1);
-
-		DBG_SPI("%s:ctrl0=0x%x\n",__func__,dw_readw(dws, SPIM_CTRLR0));
-
-		/* Set the interrupt mask, for poll mode just diable all int */
-		spi_mask_intr(dws, 0xff);
-		if (imask)
-			spi_umask_intr(dws, imask);
+		
+		spi_enable_chip(dws, 1);	
 		
 		if (cs_change)
 			dws->prev_chip = chip;
 
-	}
-	else
-	{
-		printk("%s:warning tx and rx is null\n",__func__);
+		DBG_SPI("%s:ctrl0=0x%x\n",__func__,dw_readw(dws, SPIM_CTRLR0));
 	}
 
 	/*dma should be ready before spi_enable_chip*/

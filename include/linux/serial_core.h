@@ -122,6 +122,7 @@ struct uart_port {
 				      unsigned int old);
 	void			(*handle_break)(struct uart_port *);
 	unsigned int		irq;			/* irq number */
+	unsigned int		baud;			/* curren speed */
 	unsigned long		irqflags;		/* irq flags  */
 	unsigned int		uartclk;		/* base uart clock */
 	unsigned int		fifosize;		/* tx fifo size */
@@ -280,22 +281,6 @@ static inline int uart_poll_timeout(struct uart_port *port)
 /*
  * Console helpers.
  */
-struct earlycon_device {
-	struct console *con;
-	struct uart_port port;
-	char options[16];		/* e.g., 115200n8 */
-	unsigned int baud;
-};
-int setup_earlycon(char *buf, const char *match,
-		   int (*setup)(struct earlycon_device *, const char *));
-
-#define EARLYCON_DECLARE(name, func) \
-static int __init name ## _setup_earlycon(char *buf) \
-{ \
-	return setup_earlycon(buf, __stringify(name), func); \
-} \
-early_param("earlycon", name ## _setup_earlycon);
-
 struct uart_port *uart_get_console(struct uart_port *ports, int nr,
 				   struct console *c);
 void uart_parse_options(char *options, int *baud, int *parity, int *bits,

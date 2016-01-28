@@ -5,7 +5,6 @@
 #include "camsys_mipicsi_phy.h"
 #include "camsys_gpio.h"
 #include "camsys_soc_priv.h"
-#include "ext_flashled_drv/rk_ext_fshled_ctl.h"
 
 unsigned int camsys_debug=1;
 module_param(camsys_debug, int, S_IRUGO|S_IWUSR);
@@ -168,13 +167,9 @@ static int camsys_extdev_register(camsys_devio_name_t *devio, camsys_dev_t *cams
 
     extdev = camsys_find_extdev(devio->dev_id, camsys_dev);
     if (extdev != NULL) {
-        if (strcmp(extdev->dev_name, devio->dev_name) == 0) {
-            err = 0;
-        } else {
-            err = -EINVAL;    /* ddl@rock-chips.com: v0.0x13.0 */
-            camsys_warn("Extdev(dev_id: 0x%x dev_name: %s) has been registered in %s!",
-                extdev->dev_id, extdev->dev_name,dev_name(camsys_dev->miscdev.this_device));
-        }
+        err = -EINVAL;    /* ddl@rock-chips.com: v0.0x13.0 */
+        camsys_warn("Extdev(dev_id: 0x%x) has been registered in %s!",
+            devio->dev_id, dev_name(camsys_dev->miscdev.this_device));
         goto end;
     }
 
@@ -187,18 +182,6 @@ static int camsys_extdev_register(camsys_devio_name_t *devio, camsys_dev_t *cams
     
     extdev->dev_cfg = devio->dev_cfg;
     extdev->fl.fl.active = devio->fl.fl.active;
-    extdev->fl.ext_fsh_dev = NULL;
-    //should register external flash device ?
-    if(strlen(devio->fl.fl_drv_name) && (strcmp(devio->fl.fl_drv_name,"Internal") != 0)
-        && (strcmp(devio->fl.fl_drv_name,"NC") != 0)){
-        //register flash device
-        extdev->fl.ext_fsh_dev = camsys_register_ext_fsh_dev(&devio->fl);
-        if(extdev->fl.ext_fsh_dev == NULL){
-            camsys_err("register ext flash %s failed!",devio->fl.fl_drv_name);
-            err = -EINVAL;
-            goto fail;
-        }
-    }
     regulator_info = &devio->avdd;
     regulator = &extdev->avdd;
     for (i=(CamSys_Vdd_Start_Tag+1); i<CamSys_Vdd_End_Tag; i++) {
@@ -262,10 +245,7 @@ static int camsys_extdev_register(camsys_devio_name_t *devio, camsys_dev_t *cams
 
     camsys_dev->iomux(extdev, (void*)camsys_dev);
 
-    memcpy(extdev->dev_name,devio->dev_name, sizeof(extdev->dev_name));
-    camsys_trace(1,"Extdev(dev_id: 0x%x  dev_name: %s) register success",
-        extdev->dev_id,
-        extdev->dev_name);
+    camsys_trace(1,"Extdev(dev_id: 0x%x) register success",extdev->dev_id);
 
     return 0;
 fail:
@@ -318,9 +298,6 @@ static int camsys_extdev_deregister(unsigned int dev_id, camsys_dev_t *camsys_de
             gpio++;
         }
 
-        if(extdev->fl.ext_fsh_dev != NULL){
-            camsys_deregister_ext_fsh_dev(extdev->fl.ext_fsh_dev);
-        }
         //spin_lock(&camsys_dev->lock);
         mutex_lock(&camsys_dev->extdevs.mut);
         list_del_init(&extdev->list);
@@ -355,10 +332,6 @@ static int camsys_extdev_deregister(unsigned int dev_id, camsys_dev_t *camsys_de
                         gpio_free(gpio->io);
                     }
                     gpio++;
-                }
-
-                if(extdev->fl.ext_fsh_dev != NULL){
-                    camsys_deregister_ext_fsh_dev(extdev->fl.ext_fsh_dev);
                 }
                 camsys_trace(1,"Extdev(dev_id: 0x%x) is deregister success", extdev->dev_id);
                 list_del_init(&extdev->list);
@@ -407,7 +380,7 @@ static int camsys_sysctl(camsys_sysctrl_t *devctl, camsys_dev_t *camsys_dev)
             } 
             case CamSys_Flash_Trigger:
             {
-                camsys_dev->flash_trigger_cb(camsys_dev,devctl->rev[0], devctl->on);
+                camsys_dev->flash_trigger_cb(camsys_dev, devctl->on);
                 break;
             }
             case CamSys_IOMMU:
@@ -443,8 +416,6 @@ static int camsys_sysctl(camsys_sysctrl_t *devctl, camsys_dev_t *camsys_dev)
                             }
                         }
                     }
-                }else if(devctl->ops == CamSys_Flash_Trigger){
-                    err = camsys_ext_fsh_ctrl(extdev->fl.ext_fsh_dev,devctl->rev[0],devctl->on);
                 }
                 
             } else {
@@ -769,211 +740,6 @@ static int camsys_release(struct inode *inode, struct file *file)
 * The ioctl() implementation
 */
 
-typedef struct camsys_querymem_s_32 {
-    camsys_mmap_type_t      mem_type;
-    unsigned int           mem_offset;
-
-    unsigned int            mem_size;
-} camsys_querymem_32_t;
-
-#define CAMSYS_QUREYMEM_32          _IOR(CAMSYS_IOC_MAGIC,  11, camsys_querymem_32_t)
-
-static long camsys_ioctl_compat(struct file *filp,unsigned int cmd, unsigned long arg)
-{
-	long err = 0;
-    camsys_dev_t *camsys_dev = (camsys_dev_t*)filp->private_data; 
-    
-	if (_IOC_TYPE(cmd) != CAMSYS_IOC_MAGIC) { 
-        camsys_err("ioctl type(%c!=%c) is invalidate\n",_IOC_TYPE(cmd),CAMSYS_IOC_MAGIC);
-        err = -ENOTTY;
-        goto end;
-	}
-	if (_IOC_NR(cmd) > CAMSYS_IOC_MAXNR) {
-        camsys_err("ioctl index(%d>%d) is invalidate\n",_IOC_NR(cmd),CAMSYS_IOC_MAXNR);
-        err = -ENOTTY;
-        goto end;
-	}
-
-    if (_IOC_DIR(cmd) & _IOC_READ)
-        err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));	
-    else if (_IOC_DIR(cmd) & _IOC_WRITE)
-        err = !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
-
-    if (err) {
-        camsys_err("ioctl(0x%x) operation not permitted for %s",cmd,dev_name(camsys_dev->miscdev.this_device));
-        err = -EFAULT;
-        goto end;
-    }
-
-	switch (cmd) {
-
-	    case CAMSYS_VERCHK:
-	    {
-	        camsys_version_t camsys_ver;
-	        
-            camsys_ver.drv_ver = CAMSYS_DRIVER_VERSION;
-            camsys_ver.head_ver = CAMSYS_HEAD_VERSION;
-            if (copy_to_user((void __user *)arg,(void*)&camsys_ver, sizeof(camsys_version_t)))
-                return -EFAULT;
-            break;
-	    }
-	    case CAMSYS_QUREYIOMMU:
-	    {
-            int iommu_enabled = 0;
-            #ifdef CONFIG_ROCKCHIP_IOMMU
-				struct device_node * vpu_node =NULL;
-				int vpu_iommu_enabled = 0;
-                vpu_node = of_find_node_by_name(NULL, "vpu_service");
-				if(vpu_node){
-					of_property_read_u32(vpu_node, "iommu_enabled", &vpu_iommu_enabled);
-					of_property_read_u32(camsys_dev->pdev->dev.of_node, "rockchip,isp,iommu_enable", &iommu_enabled);
-					of_node_put(vpu_node);
-					if(iommu_enabled != vpu_iommu_enabled){
-						camsys_err("iommu status not consistent,check the dts file ! isp:%d,vpu:%d",iommu_enabled,vpu_iommu_enabled);
-						return -EFAULT;
-					}
-				}
-			#endif
-            if (copy_to_user((void __user *)arg,(void*)&iommu_enabled, sizeof(iommu_enabled)))
-                return -EFAULT;
-            break;
-	    }
-	    case CAMSYS_I2CRD:
-	    {
-	        camsys_i2c_info_t i2cinfo;
-	        
-            if (copy_from_user((void*)&i2cinfo,(void __user *)arg, sizeof(camsys_i2c_info_t))) 
-                return -EFAULT;
-
-            err = camsys_i2c_read(&i2cinfo,camsys_dev);
-            if (err==0) {
-                if (copy_to_user((void __user *)arg,(void*)&i2cinfo, sizeof(camsys_i2c_info_t)))
-                    return -EFAULT;
-            }
-            break;
-	    }
-
-	    case CAMSYS_I2CWR:
-	    {
-            camsys_i2c_info_t i2cinfo;
-	        
-            if (copy_from_user((void*)&i2cinfo,(void __user *)arg, sizeof(camsys_i2c_info_t))) 
-                return -EFAULT;
-
-            err = camsys_i2c_write(&i2cinfo,camsys_dev);
-            break;
-	    }
-
-        case CAMSYS_SYSCTRL:
-        {
-            camsys_sysctrl_t devctl;
-
-            if (copy_from_user((void*)&devctl,(void __user *)arg, sizeof(camsys_sysctrl_t))) 
-                return -EFAULT;
-
-            err = camsys_sysctl(&devctl, camsys_dev);
-            if ((err==0) && (devctl.ops == CamSys_IOMMU)){
-                if (copy_to_user((void __user *)arg,(void*)&devctl, sizeof(camsys_sysctrl_t))) 
-                    return -EFAULT;
-            }
-            break;
-        }
-
-        case CAMSYS_REGRD:
-        {
-
-            break;
-        }
-
-        case CAMSYS_REGWR:
-        {
-
-            break;
-        }
-
-        case CAMSYS_REGISTER_DEVIO:
-        {
-            camsys_devio_name_t devio;
-
-            if (copy_from_user((void*)&devio,(void __user *)arg, sizeof(camsys_devio_name_t))) 
-                return -EFAULT;
-
-            err = camsys_extdev_register(&devio,camsys_dev);
-            break;
-        }
-
-        case CAMSYS_DEREGISTER_DEVIO:
-        {
-            unsigned int dev_id;
-
-            if (copy_from_user((void*)&dev_id,(void __user *)arg, sizeof(unsigned int)))
-                return -EFAULT;
-
-            err = camsys_extdev_deregister(dev_id, camsys_dev, false);
-            break;
-        }
-
-        case CAMSYS_IRQCONNECT:
-        {
-            camsys_irqcnnt_t irqcnnt;
-
-            if (copy_from_user((void*)&irqcnnt,(void __user *)arg, sizeof(camsys_irqcnnt_t))) 
-                return -EFAULT;
-            
-            err = camsys_irq_connect(&irqcnnt, camsys_dev);
-            
-            break;
-        }
-
-        case CAMSYS_IRQWAIT:
-        {
-            camsys_irqsta_t irqsta;
-
-            err = camsys_irq_wait(&irqsta, camsys_dev);
-            if (err==0) {
-                if (copy_to_user((void __user *)arg,(void*)&irqsta, sizeof(camsys_irqsta_t))) 
-                    return -EFAULT;
-            }
-            break;
-        }
-
-        case CAMSYS_IRQDISCONNECT:
-        {
-            camsys_irqcnnt_t irqcnnt;
-
-            if (copy_from_user((void*)&irqcnnt,(void __user *)arg, sizeof(camsys_irqcnnt_t))) 
-                return -EFAULT;
-            err = camsys_irq_disconnect(&irqcnnt,camsys_dev,false);
-			break;
-        }
-
-		case CAMSYS_QUREYMEM_32:
-       	{
-            camsys_querymem_t qmem;
-			camsys_querymem_32_t qmem32;
-
-            if (copy_from_user((void*)&qmem32,(void __user *)arg, sizeof(camsys_querymem_32_t))) 
-                return -EFAULT;
-
-			qmem.mem_type = qmem32.mem_type;
-            err = camsys_querymem(camsys_dev,&qmem);
-            if (err == 0) {
-				qmem32.mem_offset = (unsigned int)qmem.mem_offset;
-				qmem32.mem_size = qmem.mem_size;
-                if (copy_to_user((void __user *)arg,(void*)&qmem32, sizeof(camsys_querymem_32_t))) 
-                    return -EFAULT;
-            }
-            break;
-		}
-        default :
-            break;
-	}
-
-end:	
-	return err;
-
-}
-
 static long camsys_ioctl(struct file *filp,unsigned int cmd, unsigned long arg)
 {
 	long err = 0;
@@ -1019,11 +785,10 @@ static long camsys_ioctl(struct file *filp,unsigned int cmd, unsigned long arg)
             #ifdef CONFIG_ROCKCHIP_IOMMU
 				struct device_node * vpu_node =NULL;
 				int vpu_iommu_enabled = 0;
-                vpu_node = of_find_node_by_name(NULL, "vpu_service");
+                vpu_node = of_find_compatible_node(NULL,NULL, "vpu_service");
 				if(vpu_node){
 					of_property_read_u32(vpu_node, "iommu_enabled", &vpu_iommu_enabled);
 					of_property_read_u32(camsys_dev->pdev->dev.of_node, "rockchip,isp,iommu_enable", &iommu_enabled);
-					of_node_put(vpu_node);
 					if(iommu_enabled != vpu_iommu_enabled){
 						camsys_err("iommu status not consistent,check the dts file ! isp:%d,vpu:%d",iommu_enabled,vpu_iommu_enabled);
 						return -EFAULT;
@@ -1158,7 +923,7 @@ static long camsys_ioctl(struct file *filp,unsigned int cmd, unsigned long arg)
             }
             break;
         }
-		
+       
         default :
             break;
 	}
@@ -1167,8 +932,6 @@ end:
 	return err;
 
 }
-
-
 /*
  * VMA operations.
  */
@@ -1257,7 +1020,6 @@ struct file_operations camsys_fops = {
     .release =          camsys_release,
 	.unlocked_ioctl =   camsys_ioctl,
 	.mmap =             camsys_mmap,
-	.compat_ioctl = camsys_ioctl_compat,
 };
 
 static int camsys_platform_probe(struct platform_device *pdev){
@@ -1291,6 +1053,58 @@ static int camsys_platform_probe(struct platform_device *pdev){
         goto fail_end;
     }
 
+	int cifpower_io ;
+	int dvppower_io ;
+	enum of_gpio_flags flags;
+	int io_ret;
+	cifpower_io = of_get_named_gpio_flags(dev->of_node, "gpios-cifpower", 0, &flags);
+	camsys_trace(1, "1-gpios-cifpower: gpio=%d", cifpower_io);
+	if(gpio_is_valid(cifpower_io)){
+		cifpower_io = of_get_named_gpio_flags(dev->of_node, "gpios-cifpower", 0, &flags);
+		camsys_trace(1, "gpios-cifpower: gpio_request");
+		io_ret = gpio_request(cifpower_io,"cifpower");
+		camsys_trace(1, "1-gpios-cifpower: gpio_request=%d", io_ret);
+		if(io_ret < 0)
+		{
+			camsys_err("Request %s(%d) failed","cifpower", cifpower_io);
+		}
+		else
+		{
+			gpio_direction_output(cifpower_io, 1);
+			gpio_set_value(cifpower_io, 1);
+			camsys_trace(1, "gpios-cifpower: %d high", cifpower_io);
+			while(0)
+			{
+				gpio_set_value(cifpower_io, 1);
+				camsys_trace(1, "gpios-cifpower: %d high", cifpower_io);
+				mdelay(2000);
+				gpio_set_value(cifpower_io, 0);
+				camsys_trace(1, "gpios-cifpower: %d low", cifpower_io);
+				mdelay(2000);
+			}
+		}
+	}
+	/*
+	dvppower_io = of_get_named_gpio_flags(dev->of_node, "gpios-dvppower", 0, &flags);
+	camsys_trace(1, "gpios-dvppower: %d", dvppower_io);
+	if(gpio_is_valid(dvppower_io)){
+		dvppower_io = of_get_named_gpio_flags(dev->of_node, "gpios-dvppower", 0, &flags);
+		gpio_request(dvppower_io,"dvppower");
+		gpio_direction_output(dvppower_io, 1);
+		gpio_set_value(dvppower_io, 1);
+		camsys_trace(1, "gpios-dvppower: %d high", dvppower_io);
+		while(0)
+		{
+			gpio_set_value(dvppower_io, 1);
+			camsys_trace(1, "gpios-cifpower: %d high", dvppower_io);
+			mdelay(2000);
+			gpio_set_value(dvppower_io, 0);
+			camsys_trace(1, "gpios-cifpower: %d low", dvppower_io);
+			mdelay(2000);
+		}
+	}
+	//*/
+
     //spin_lock_init(&camsys_dev->lock);
     mutex_init(&camsys_dev->extdevs.mut);
     INIT_LIST_HEAD(&camsys_dev->extdevs.list);
@@ -1320,13 +1134,13 @@ static int camsys_platform_probe(struct platform_device *pdev){
         goto request_mem_fail;
     }
 
-    meminfo->vir_base = (unsigned long)devm_ioremap_resource(dev, &register_res);
+    meminfo->vir_base = (unsigned int)devm_ioremap_resource(dev, &register_res);
     if (!meminfo->vir_base){
         camsys_err("%s ioremap %s failed",dev_name(&pdev->dev), CAMSYS_REGISTER_MEM_NAME);
         err = -ENXIO;
         goto request_mem_fail;
     }
-	rk_isp_base = meminfo->vir_base;
+
     strlcpy(meminfo->name, CAMSYS_REGISTER_MEM_NAME,sizeof(meminfo->name));
     meminfo->phy_base = register_res.start;
     meminfo->size = register_res.end - register_res.start + 1;  
@@ -1395,12 +1209,12 @@ static int camsys_platform_probe(struct platform_device *pdev){
     list_for_each_entry(meminfo, &camsys_dev->devmems.memslist, list) {
         if (strcmp(meminfo->name,CAMSYS_I2C_MEM_NAME) == 0) {
             camsys_dev->devmems.i2cmem = meminfo;
-            camsys_trace(1,"    I2c memory (phy: 0x%lx vir: 0x%lx size: 0x%x)",
+            camsys_trace(1,"    I2c memory (phy: 0x%x vir: 0x%x size: 0x%x)",
                         meminfo->phy_base,meminfo->vir_base,meminfo->size);
         }
         if (strcmp(meminfo->name,CAMSYS_REGISTER_MEM_NAME) == 0) {
             camsys_dev->devmems.registermem = meminfo;
-            camsys_trace(1,"    Register memory (phy: 0x%lx vir: 0x%lx size: 0x%x)",
+            camsys_trace(1,"    Register memory (phy: 0x%x vir: 0x%x size: 0x%x)",
                         meminfo->phy_base,meminfo->vir_base,meminfo->size);
         }
     }
@@ -1415,7 +1229,7 @@ static int camsys_platform_probe(struct platform_device *pdev){
     list_add_tail(&camsys_dev->list, &camsys_devs.devs);
     spin_unlock(&camsys_devs.lock);
 
-    camsys_init_ext_fsh_module();  
+    
     camsys_trace(1, "Probe %s device success ", dev_name(&pdev->dev));
     return 0;
 request_mem_fail:
@@ -1489,8 +1303,6 @@ static int  camsys_platform_remove(struct platform_device *pdev)
         spin_lock(&camsys_devs.lock);
         list_del_init(&camsys_dev->list);
         spin_unlock(&camsys_devs.lock);
-
-        camsys_deinit_ext_fsh_module();
 
         kfree(camsys_dev);
         camsys_dev=NULL;

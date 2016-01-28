@@ -16,7 +16,7 @@
 #include <linux/regulator/machine.h>
 #include <linux/wakelock.h>
 #include <linux/power_supply.h>
-//#include <linux/power/rk818_battery.h>
+#include <linux/power/rk818_battery.h>
 
 //#define RK818_START 30
 
@@ -194,7 +194,7 @@ int rk818_bulk_read(struct rk818 *rk818, u8 reg,
 		     int count, u8 *buf);
 int rk818_bulk_write(struct rk818 *rk818, u8 reg,
 		     int count, u8 *buf);
-void rk818_device_shutdown(void);
+int rk818_device_shutdown(void);
 
 #endif
 

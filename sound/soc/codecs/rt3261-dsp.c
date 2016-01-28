@@ -34,19 +34,22 @@ static const u16 rt3261_dsp_init[][2] = {
 #define RT3261_DSP_INIT_NUM \
 	(sizeof(rt3261_dsp_init) / sizeof(rt3261_dsp_init[0]))
 
-static const u16 rt3261_dsp_48[][2] = {
+//static const u16 rt3261_dsp_48[][2] = {
+unsigned short rt3261_dsp_48[][2] = {
 	{0x22c8, 0x0026}, {0x22fe, 0x0fa0}, {0x22ff, 0x3893}, {0x22fa, 0x2487},
 	{0x2301, 0x0002},
 };
 #define RT3261_DSP_48_NUM (sizeof(rt3261_dsp_48) / sizeof(rt3261_dsp_48[0]))
 
-static const u16 rt3261_dsp_441[][2] = {
+//static const u16 rt3261_dsp_441[][2] = {
+unsigned short rt3261_dsp_441[][2] = {
 	{0x22c6, 0x0031}, {0x22c7, 0x0050}, {0x22c8, 0x0009}, {0x22fe, 0x0e5b},
 	{0x22ff, 0x3883}, {0x22fa, 0x2484}, {0x2301, 0x0001},
 };
 #define RT3261_DSP_441_NUM (sizeof(rt3261_dsp_441) / sizeof(rt3261_dsp_441[0]))
 
-static const u16 rt3261_dsp_16[][2] = {
+//static const u16 rt3261_dsp_16[][2] = {
+unsigned short rt3261_dsp_16[][2] = {
 	{0x22c8, 0x0026}, {0x22fa, 0x2484}, {0x2301, 0x0002},
 };
 #define RT3261_DSP_16_NUM (sizeof(rt3261_dsp_16) / sizeof(rt3261_dsp_16[0]))
@@ -116,6 +119,7 @@ static const u16 rt3261_dsp_aec_ns_fens[][2] = {
 
 #define RT3261_DSP_AEC_NUM \
 	(sizeof(rt3261_dsp_aec_ns_fens) / sizeof(rt3261_dsp_aec_ns_fens[0]))
+
 static const u16 rt3261_dsp_hfbf[][2] = {
 	{0x22f8, 0x8004}, {0x22a0, 0x1205}, {0x22a1, 0x0f00}, {0x22a2, 0x1000},
 	{0x22a3, 0x1000}, {0x22a4, 0x1000}, {0x22aa, 0x0006}, {0x22ad, 0x0060},
@@ -752,7 +756,7 @@ static int rt3261_dsp_rate(struct snd_soc_codec *codec, int rate)
 {
 	struct rt3261_dsp_param param;
 	int ret, i, tab_num;
-	static const unsigned short (*rate_tab)[2];
+	unsigned short (*rate_tab)[2];
 
 	if (rate != 48000 &&  rate != 44100 && rate != 16000)
 		return -EINVAL;
@@ -998,7 +1002,7 @@ static ssize_t rt3261_dsp_show(struct device *dev,
 	struct i2c_client *client = to_i2c_client(dev);
 	struct rt3261_priv *rt3261 = i2c_get_clientdata(client);
 	struct snd_soc_codec *codec = rt3261->codec;
-	static const unsigned short (*rt3261_dsp_tab)[2];
+	unsigned short (*rt3261_dsp_tab)[2];
 	unsigned int val;
 	int cnt = 0, i, tab_num;
 
@@ -1075,7 +1079,7 @@ static ssize_t dsp_reg_store(struct device *dev,
 	unsigned int val=0,addr=0;
 	int i;
 
-	dev_dbg(codec->dev, "register \"%s\" count=%zu\n", buf, count);
+	printk("register \"%s\" count=%d\n",buf,count);
 
 	for(i=0;i<count;i++) //address
 	{
@@ -1117,11 +1121,10 @@ static ssize_t dsp_reg_store(struct device *dev,
 			break;
 		}
 	}
-	dev_dbg(codec->dev, "addr=0x%x val=0x%x\n", addr, val);
+	printk("addr=0x%x val=0x%x\n",addr,val);
 	if(i==count)
 	{
-		dev_dbg(codec->dev, "0x%04x = 0x%04x\n",
-			addr, rt3261_dsp_read(codec, addr));
+		printk("0x%04x = 0x%04x\n",addr,rt3261_dsp_read(codec, addr));
 	}
 	else
 	{
@@ -1224,7 +1227,7 @@ int rt_codec_dsp_ioctl_common(struct snd_hwdep *hw, struct file *file, unsigned 
 		dev_err(codec->dev, "copy_from_user faild\n");
 		return -EFAULT;
 	}
-	dev_dbg(codec->dev, "rt_codec.number=%zu\n", rt_codec.number);
+	dev_dbg(codec->dev, "rt_codec.number=%d\n",rt_codec.number);
 	buf = kmalloc(sizeof(*buf) * rt_codec.number, GFP_KERNEL);
 	if (buf == NULL)
 		return -ENOMEM;

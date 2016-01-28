@@ -1069,7 +1069,7 @@ int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 	if (unlikely(tp->repair)) {
 		if (tp->repair_queue == TCP_RECV_QUEUE) {
 			copied = tcp_send_rcvq(sk, msg, size);
-			goto out_nopush;
+			goto out;
 		}
 
 		err = -EINVAL;
@@ -1242,7 +1242,6 @@ wait_for_memory:
 out:
 	if (copied)
 		tcp_push(sk, flags, mss_now, tp->nonagle);
-out_nopush:
 	release_sock(sk);
 
 	if (copied + copied_syn)
@@ -3510,7 +3509,7 @@ int tcp_nuke_addr(struct net *net, struct sockaddr *addr)
 
 	struct in_addr *in;
 #if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
-	struct in6_addr *in6 = NULL;
+	struct in6_addr *in6;
 #endif
 	if (family == AF_INET) {
 		in = &((struct sockaddr_in *)addr)->sin_addr;
@@ -3585,4 +3584,3 @@ restart:
 
 	return 0;
 }
-EXPORT_SYMBOL_GPL(tcp_nuke_addr);

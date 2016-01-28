@@ -23,7 +23,6 @@
 #include <linux/slab.h>
 #include <linux/sysfs.h>
 #include <linux/workqueue.h>
-#include <linux/rockchip/common.h>
 #include "hwmon-rockchip.h"
 
 
@@ -68,8 +67,8 @@ static void tsadc_monitor(struct work_struct *work)
 		if (data->max[i] < data->min[i])
 			continue;
 
-		temp = data->ops.read_sensor(i);
-		if (temp == INVALID_TEMP) {
+		temp = data->ops.read_sensor(data->tsadc_addr[i]);
+		if (temp == 150) {
 			dev_err(&data->pdev->dev, "TSADC read failed\n");
 			continue;
 		}
@@ -141,8 +140,9 @@ static ssize_t show_input(struct device *dev,
 	int  temp;
 	struct rockchip_temp *data = dev_get_drvdata(dev);
 	struct sensor_device_attribute *attr = to_sensor_dev_attr(devattr);
+	u8 tsadc_addr = data->tsadc_addr[attr->index];
 
-	temp = data->ops.read_sensor(attr->index);
+	temp = data->ops.read_sensor(tsadc_addr);
 
 	return sprintf(buf, "%d\n", temp);
 }
@@ -445,7 +445,14 @@ static struct platform_driver rockchip_temp_driver = {
 	.remove = rockchip_temp_remove,
 };
 
-module_platform_driver(rockchip_temp_driver);
+static int __init rockchip_tsadc_init(void)
+{
+	return platform_driver_register(&rockchip_temp_driver);
+}
+subsys_initcall(rockchip_tsadc_init);
+
+
+//module_platform_driver(rockchip_temp_driver);
 
 MODULE_AUTHOR("<rockchip>");
 MODULE_DESCRIPTION("rockchip temperature driver");

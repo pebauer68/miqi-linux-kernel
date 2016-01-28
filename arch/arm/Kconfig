@@ -4,9 +4,7 @@ config ARM
 	select ARCH_BINFMT_ELF_RANDOMIZE_PIE
 	select ARCH_HAS_ATOMIC64_DEC_IF_POSITIVE
 	select ARCH_HAVE_CUSTOM_GPIO_H
-	select ARCH_SUPPORTS_ATOMIC_RMW
 	select ARCH_HAS_TICK_BROADCAST if GENERIC_CLOCKEVENTS_BROADCAST
-	select ARCH_HAS_GCOV_PROFILE_ALL
 	select ARCH_WANT_IPC_PARSE_VERSION
 	select BUILDTIME_EXTABLE_SORT if MMU
 	select CPU_PM if (SUSPEND || CPU_IDLE)
@@ -1375,16 +1373,6 @@ config ARM_ERRATA_818325
 	  prevents the erratum. This bit disables an optimisation applied to a
 	  sequence of 2 instructions that use opposing condition codes.
 
-config ARM_ERRATA_821420
-	bool "ARM errata: A sequence of VMOV to core registers instruction might lead to a deadlock"
-	depends on CPU_V7
-	help
-	  This option enables the workaround for the 821420 Cortex-A12 (r0p0,
-	  r0p1) erratum. In very rare timing conditions, a sequence of VMOV to
-	  Core registers instructions, for which the second one is in the
-	  shadow of a branch or abort, can lead to a deadlock when the VMOV
-	  instructions are issued out-of-order.
-
 endmenu
 
 source "arch/arm/common/Kconfig"
@@ -1889,14 +1877,6 @@ config HW_PERF_EVENTS
 	  Enable hardware performance counter support for perf events. If
 	  disabled, perf events will use software events only.
 
-config SYS_SUPPORTS_HUGETLBFS
-       def_bool y
-       depends on ARM_LPAE
-
-config HAVE_ARCH_TRANSPARENT_HUGEPAGE
-       def_bool y
-       depends on ARM_LPAE
-
 source "mm/Kconfig"
 
 config FORCE_MAX_ZONEORDER
@@ -2386,13 +2366,6 @@ config NEON
 	help
 	  Say Y to include support code for NEON, the ARMv7 Advanced SIMD
 	  Extension.
-
-config KERNEL_MODE_NEON
-	bool "Support for NEON in kernel mode"
-	default n
-	depends on NEON
-	help
-	  Say Y to include support for NEON in kernel mode.
 
 endmenu
 

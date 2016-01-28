@@ -18,14 +18,14 @@
 #include <asm/tlbflush.h>
 #include <linux/cpu.h>
 #include <dt-bindings/clock/ddr.h>
-#include <linux/rockchip/cpu_axi.h>
 #include <linux/rockchip/cru.h>
 #include <linux/rk_fb.h>
+#include "cpu_axi.h"
 
 typedef uint32_t uint32;
 
 #ifdef CONFIG_FB_ROCKCHIP
-#define DDR_CHANGE_FREQ_IN_LCDC_VSYNC
+//#define DDR_CHANGE_FREQ_IN_LCDC_VSYNC
 #endif
 /***********************************
  * Global Control Macro
@@ -1380,7 +1380,6 @@ typedef struct CHANNEL_INFO_Tag
     DRAM_TYPE     mem_type; // =DRAM_MAX, channel invalid
     uint32        ddr_speed_bin;    // used for ddr3 only
     uint32        ddr_capability_per_die;  // one chip cs capability
-    uint32        dtt_cs;  //data training cs
 }CH_INFO,*pCH_INFO;
 
 struct ddr_freq_t {
@@ -1717,7 +1716,6 @@ static void ddr_get_datatraing_addr(uint32 *pdtar)
     uint32          bank;
     uint32          bw;
     uint32          conf;
-    uint32          cap1;
 
     for(ch=0,chCnt=0;ch<CH_MAX;ch++)
     {
@@ -1725,7 +1723,6 @@ static void ddr_get_datatraing_addr(uint32 *pdtar)
         {
             chCnt++;
         }
-        p_ddr_ch[ch]->dtt_cs = 0;
     }
 
     // caculate aglined physical address
@@ -1755,23 +1752,7 @@ static void ddr_get_datatraing_addr(uint32 *pdtar)
             socAddr[1] = addr + strideSize;
         }
         ddr_print("socAddr[0]=0x%x, socAddr[1]=0x%x\n", socAddr[0], socAddr[1]);
-	 if(stride < 4)
-	 {
-	 	 cap1 = (1 << (READ_ROW_INFO(1,0)+READ_COL_INFO(1)+READ_BK_INFO(1)+READ_BW_INFO(1)));
-	        if(READ_CS_INFO(1) > 1)
-	        {
-	            cap1 += cap1 >> (READ_ROW_INFO(1,0)-READ_ROW_INFO(1,1));
-	        }
-	        if(READ_CH_ROW_INFO(1))
-	        {
-	            cap1 = cap1*3/4;
-	        }
-		 chAddr[0] = addr;
-		 chAddr[1] = cap1 - PAGE_SIZE;
-		 if(READ_CS_INFO(1) > 1)
-		         p_ddr_ch[1]->dtt_cs = 1;
-	 }
-        else if((stride >= 0x10) && (stride <= 0x13))  // 3GB stride
+        if((stride >= 0x10) && (stride <= 0x13))  // 3GB stride
         {
             //conver to ch addr
             if(addr < 0x40000000)
@@ -1809,13 +1790,13 @@ static void ddr_get_datatraing_addr(uint32 *pdtar)
                 chAddr[1] = socAddr[1] - halfCap;
             }
         }
+        ddr_print("chAddr[0]=0x%x, chAddr[1]=0x%x\n", chAddr[0], chAddr[1]);
     }
     else
     {
         chAddr[0] = addr;
         chAddr[1] = addr;
     }
-    ddr_print("chAddr[0]=0x%x, chAddr[1]=0x%x\n", chAddr[0], chAddr[1]);
 
     for(ch=0,chCnt=0;ch<CH_MAX;ch++)
     {
@@ -2013,10 +1994,7 @@ static uint32 __sramfunc ddr_data_training_trigger(uint32 ch)
     // clear DTDONE status
     pPHY_Reg->PIR |= CLRSR;
     cs = ((pPHY_Reg->PGCR>>18) & 0xF);
-    if(DATA(ddr_ch[ch]).dtt_cs == 0)
-            pPHY_Reg->PGCR = (pPHY_Reg->PGCR & (~(0xF<<18))) | (1<<18);  //use cs0 dtt
-    else
-            pPHY_Reg->PGCR = (pPHY_Reg->PGCR & (~(0xF<<18))) | (2<<18);  //use cs1 dtt
+    pPHY_Reg->PGCR = (pPHY_Reg->PGCR & (~(0xF<<18))) | (1<<18);  //use cs0 dtt
     // trigger DTT
     pPHY_Reg->PIR |= INIT | QSTRN | LOCKBYP | ZCALBYP | CLRSR | ICPC;
     return cs;
@@ -2026,39 +2004,25 @@ static uint32 __sramfunc ddr_data_training_trigger(uint32 ch)
 //!0 DTT失败
 static uint32 __sramfunc ddr_data_training(uint32 ch, uint32 cs)
 {
-    uint32        i,byte=2,cs_msk;
+    uint32        i,byte;
     pDDR_REG_T    pDDR_Reg = DATA(ddr_ch[ch]).pDDR_Reg;
     pDDRPHY_REG_T pPHY_Reg = DATA(ddr_ch[ch]).pPHY_Reg;
-
-    if(DATA(ddr_ch[ch]).dtt_cs == 0){
-        cs_msk = 1;
-    }else{
-        cs_msk = 2;
-    }
+    
     // wait echo byte DTDONE
-    while((pPHY_Reg->DATX8[0].DXGSR[0] & cs_msk) != cs_msk);
-    while((pPHY_Reg->DATX8[1].DXGSR[0] & cs_msk) != cs_msk);
+    while((pPHY_Reg->DATX8[0].DXGSR[0] & 1) != 1);
+    while((pPHY_Reg->DATX8[1].DXGSR[0] & 1) != 1);
     if(!(pDDR_Reg->PPCFG & 1))
     {
-        while((pPHY_Reg->DATX8[2].DXGSR[0] & cs_msk) != cs_msk);
-        while((pPHY_Reg->DATX8[3].DXGSR[0] & cs_msk) != cs_msk);
+        while((pPHY_Reg->DATX8[2].DXGSR[0] & 1) != 1);
+        while((pPHY_Reg->DATX8[3].DXGSR[0] & 1) != 1);
         byte=4;
     }
     pPHY_Reg->PGCR = (pPHY_Reg->PGCR & (~(0xF<<18))) | (cs<<18);  //restore cs
-    if(DATA(ddr_ch[ch]).dtt_cs == 0){
-        for(i=0;i<byte;i++)
-        {
-            pPHY_Reg->DATX8[i].DXDQSTR = (pPHY_Reg->DATX8[i].DXDQSTR & (~((0x7<<3)|(0x3<<14))))\
-                                          | ((pPHY_Reg->DATX8[i].DXDQSTR & 0x7)<<3)\
-                                          | (((pPHY_Reg->DATX8[i].DXDQSTR>>12) & 0x3)<<14);
-        }
-    }else{
-        for(i=0;i<byte;i++)
-        {
-            pPHY_Reg->DATX8[i].DXDQSTR = (pPHY_Reg->DATX8[i].DXDQSTR & (~((0x7<<0)|(0x3<<12))))\
-                                          | ((pPHY_Reg->DATX8[i].DXDQSTR>>3) & 0x7)\
-                                          | (((pPHY_Reg->DATX8[i].DXDQSTR>>14) & 0x3)<<12);
-        }
+    for(i=0;i<byte;i++)
+    {
+        pPHY_Reg->DATX8[i].DXDQSTR = (pPHY_Reg->DATX8[i].DXDQSTR & (~((0x7<<3)|(0x3<<14))))
+                                      | ((pPHY_Reg->DATX8[i].DXDQSTR & 0x7)<<3)
+                                      | (((pPHY_Reg->DATX8[i].DXDQSTR>>12) & 0x3)<<14);
     }
     // send some auto refresh to complement the lost while DTT，//测到1个CS的DTT最长时间是10.7us。最多补2次刷新
     if(cs > 1)
@@ -2091,7 +2055,6 @@ static uint32 __sramfunc ddr_data_training(uint32 ch, uint32 cs)
         return 0;
     }
 }
-
 
 static void __sramfunc ddr_set_dll_bypass(uint32 ch, uint32 freq)
 {
@@ -3679,6 +3642,7 @@ typedef struct freq_tag{
     struct ddr_freq_t *p_ddr_freq_t;
 }freq_t;
 
+static int dclk_div;
 static noinline uint32 ddr_change_freq_sram(void *arg)
 {
     uint32 freq;
@@ -3692,12 +3656,8 @@ static noinline uint32 ddr_change_freq_sram(void *arg)
     uint32 gpllvaluel;
     freq_t *p_freq_t=(freq_t *)arg;    
     uint32 nMHz=p_freq_t->nMHz;
-	static struct rk_screen screen;
-	static int dclk_div, down_dclk_div;
+    //struct ddr_freq_t *p_ddr_freq_t=p_freq_t->p_ddr_freq_t;
 
-#if defined (DDR_CHANGE_FREQ_IN_LCDC_VSYNC)
-    struct ddr_freq_t *p_ddr_freq_t=p_freq_t->p_ddr_freq_t;
-#endif
 
 #if defined(CONFIG_ARCH_RK3066B)
     if(dqstr_flag==true)
@@ -3706,14 +3666,9 @@ static noinline uint32 ddr_change_freq_sram(void *arg)
         freq_slew = (nMHz>ddr_freq)? 1 : 0;
     }
 #endif
-	if (!screen.mode.pixclock) {
-		rk_fb_get_prmry_screen(&screen);
-		if (screen.lcdc_id == 0)
-			dclk_div = (cru_readl(RK3288_CRU_CLKSELS_CON(27)) >> 8) & 0xff;
-		else if (screen.lcdc_id == 1)
-			dclk_div = (cru_readl(RK3288_CRU_CLKSELS_CON(29)) >> 8) & 0xff;
-		down_dclk_div = 64*(dclk_div+1)-1;
-	}
+
+    dclk_div = (cru_readl(RK3288_CRU_CLKSELS_CON(29)) >> 8) & 0xff;
+
     param.arm_freq = ddr_get_pll_freq(APLL);
     gpllvaluel = ddr_get_pll_freq(GPLL);
     if((200 < gpllvaluel) ||( gpllvaluel <1600))      //GPLL:200MHz~1600MHz
@@ -3786,26 +3741,11 @@ static noinline uint32 ddr_change_freq_sram(void *arg)
     param.freq = freq;
     param.freq_slew = freq_slew;
     param.dqstr_value = dqstr_value;
-	rk_fb_set_prmry_screen_status(SCREEN_PREPARE_DDR_CHANGE);
-	if (screen.lcdc_id == 0)
-		cru_writel(0 | CRU_W_MSK_SETBITS(down_dclk_div, 8, 0xff),
-			   RK3288_CRU_CLKSELS_CON(27));
-	else if (screen.lcdc_id == 1)
-		cru_writel(0 | CRU_W_MSK_SETBITS(down_dclk_div, 8, 0xff),
-			   RK3288_CRU_CLKSELS_CON(29));
-
+    cru_writel(0 |CRU_W_MSK_SETBITS(0xff,8,0xff), RK3288_CRU_CLKSELS_CON(29));
     call_with_stack(fn_to_pie(rockchip_pie_chunk, &FUNC(ddr_change_freq_sram)),
                     &param,
                     rockchip_sram_stack-(NR_CPUS-1)*PAUSE_CPU_STACK_SIZE);
-
-	if (screen.lcdc_id == 0)
-		cru_writel(0 | CRU_W_MSK_SETBITS(dclk_div, 8, 0xff),
-		RK3288_CRU_CLKSELS_CON(27));
-	else if (screen.lcdc_id == 1)
-		cru_writel(0 | CRU_W_MSK_SETBITS(dclk_div, 8, 0xff),
-		RK3288_CRU_CLKSELS_CON(29));
-	rk_fb_set_prmry_screen_status(SCREEN_UNPREPARE_DDR_CHANGE);
-
+    cru_writel(0 |CRU_W_MSK_SETBITS(dclk_div,8,0xff), RK3288_CRU_CLKSELS_CON(29));
 #if defined (DDR_CHANGE_FREQ_IN_LCDC_VSYNC)
 end:
 #endif
@@ -3869,6 +3809,8 @@ static inline void set_cpuX_paused(unsigned int cpu, bool pause) { DATA(cpu_paus
 static inline bool is_cpuX_paused(unsigned int cpu) { smp_rmb(); return DATA(p_cpu_pause)[cpu]; }
 static inline void set_cpu0_paused(bool pause) { DATA(p_cpu_pause)[0] = pause; smp_wmb();}
 
+#define MAX_TIMEOUT (16000000UL << 6) //>0.64s
+
 /* Do not use stack, safe on SMP */
 void PIE_FUNC(_pause_cpu)(void *arg)
 {       
@@ -3894,39 +3836,35 @@ static void wait_cpu(void *info)
 
 static int call_with_single_cpu(u32 (*fn)(void *arg), void *arg)
 {
-	s64 now_ns, timeout_ns;
-	unsigned int cpu;
-	unsigned int this_cpu = smp_processor_id();
-	int ret = 0;
+    u32 timeout = MAX_TIMEOUT;
+    unsigned int cpu;
+    unsigned int this_cpu = smp_processor_id();
+    int ret = 0;
 
-	cpu_maps_update_begin();
-	local_bh_disable();
+    cpu_maps_update_begin();
+    local_bh_disable();
+    set_cpu0_paused(true);
+    smp_call_function((smp_call_func_t)pause_cpu, NULL, 0);
 
-	/* It should take much less than 1s to pause the cpus. It typically
-	* takes around 20us. */
-	timeout_ns = ktime_to_ns(ktime_add_ns(ktime_get(), NSEC_PER_SEC));
-	now_ns = ktime_to_ns(ktime_get());
-	set_cpu0_paused(true);
-	smp_call_function((smp_call_func_t)pause_cpu, NULL, 0);
-	for_each_online_cpu(cpu) {
-		if (cpu == this_cpu)
-			continue;
-		while (!is_cpuX_paused(cpu) && (now_ns < timeout_ns))
-			now_ns = ktime_to_ns(ktime_get());
-		if (now_ns >= timeout_ns) {
-			pr_err("pause cpu %d timeout\n", cpu);
-			ret = -EPERM;
-			goto out;
-		}
-	}
-	ret = fn(arg);
+    for_each_online_cpu(cpu) {
+        if (cpu == this_cpu)
+            continue;
+        while (!is_cpuX_paused(cpu) && --timeout);
+        if (timeout == 0) {
+            pr_err("pause cpu %d timeout\n", cpu);
+            goto out;
+        }
+    }
+
+    ret = fn(arg);
+
 out:
-	set_cpu0_paused(false);
-	local_bh_enable();
-	smp_call_function(wait_cpu, NULL, true);
-	cpu_maps_update_done();
+    set_cpu0_paused(false);
+    local_bh_enable();
+    smp_call_function(wait_cpu, NULL, true);
+    cpu_maps_update_done();
 
-	return ret;
+    return ret;
 }
 
 void PIE_FUNC(ddr_adjust_config)(void *arg)
@@ -4052,13 +3990,10 @@ static int __ddr_change_freq(uint32_t nMHz, struct ddr_freq_t ddr_freq_t)
 static int _ddr_change_freq(uint32 nMHz)
 {
 	struct ddr_freq_t ddr_freq_t;
-        #if defined (DDR_CHANGE_FREQ_IN_LCDC_VSYNC)
-	unsigned long remain_t, vblank_t, pass_t;
-	static unsigned long reserve_t = 800;//us
-	unsigned long long tmp;
-	int test_count=0;
-        #endif
-        int ret;
+	//unsigned long remain_t, vblank_t;//, pass_t;
+	//static unsigned long reserve_t = 800;//us
+	//unsigned long long tmp;
+	int ret;//, test_count=0;
 
 	memset(&ddr_freq_t, 0x00, sizeof(ddr_freq_t));
 
@@ -4067,9 +4002,6 @@ static int _ddr_change_freq(uint32 nMHz)
 	{
 		ddr_freq_t.screen_ft_us = rk_fb_get_prmry_screen_ft();
 		ddr_freq_t.t0 = rk_fb_get_prmry_screen_framedone_t();
-		if (!ddr_freq_t.screen_ft_us)
-			return __ddr_change_freq(nMHz, ddr_freq_t);
-
 		tmp = cpu_clock(0) - ddr_freq_t.t0;
 		do_div(tmp, 1000);
 		pass_t = tmp;
@@ -4103,10 +4035,9 @@ static int _ddr_change_freq(uint32 nMHz)
 
 		ret = __ddr_change_freq(nMHz, ddr_freq_t);
 		if (ret) {
-			reserve_t = 800;
 			return ret;
 		} else {
-			if (reserve_t < 3000)
+			if (reserve_t < 10000)
 				reserve_t += 200;
 		}
 	}while(1);
@@ -4410,123 +4341,6 @@ char * ddr_get_resume_data_info(u32 *size)
 }
 EXPORT_SYMBOL(ddr_get_resume_data_info);
 
-/**********************ddr bandwidth calc*********************/
-enum ddr_bandwidth_id {
-	ddrbw_wr_num = 0,
-	ddrbw_rd_num,
-	ddrbw_act_num,
-	ddrbw_time_num,
-	ddrbw_eff,
-	ddrbw_id_end
-};
-
-#define grf_readl(offset)	readl_relaxed(RK_GRF_VIRT + offset)
-#define grf_writel(v, offset) \
-	do { writel_relaxed(v, RK_GRF_VIRT + offset); dsb(); } while (0)
-
-#define noc_readl(offset)       readl_relaxed(RK3288_SERVICE_BUS_VIRT + offset)
-#define noc_writel(v, offset) \
-	do { writel_relaxed(v, RK3288_SERVICE_BUS_VIRT + offset); \
-		dsb(); } while (0)
-
-static void ddr_monitor_start(void)
-{
-	int i;
-
-	for (i = 1; i < 8; i++) {
-		noc_writel(0x8, (0x400*i+0x8));
-		noc_writel(0x1, (0x400*i+0xc));
-		noc_writel(0x6, (0x400*i+0x138));
-		noc_writel(0x10, (0x400*i+0x14c));
-		noc_writel(0x8, (0x400*i+0x160));
-		noc_writel(0x10, (0x400*i+0x174));
-	}
-
-	grf_writel((((readl_relaxed(RK_PMU_VIRT+0x9c)>>13)&7) == 3) ?
-			0xc000c000 : 0xe000e000, RK3288_GRF_SOC_CON4);
-
-	for (i = 1; i < 8; i++)
-		noc_writel(0x1, (0x400*i+0x28));
-}
-
-static void ddr_monitor_stop(void)
-{
-	grf_writel(0xc0000000, RK3288_GRF_SOC_CON4);
-}
-
-static void _ddr_bandwidth_get(struct ddr_bw_info *ddr_bw_ch0,
-			struct ddr_bw_info *ddr_bw_ch1)
-{
-	u32 ddr_bw_val[2][ddrbw_id_end], ddr_freq;
-	u64 temp64;
-	int i, j;
-
-	ddr_monitor_stop();
-	for (j = 0; j < 2; j++) {
-		for (i = 0; i < ddrbw_eff; i++)
-			ddr_bw_val[j][i] =
-				grf_readl(RK3288_GRF_SOC_STATUS11+i*4+j*16);
-	}
-	if (!ddr_bw_val[0][ddrbw_time_num])
-		goto end;
-
-	if (ddr_bw_ch0) {
-		ddr_freq = readl_relaxed(RK_DDR_VIRT + 0xc0);
-
-		temp64 = ((u64)ddr_bw_val[0][0]+ddr_bw_val[0][1])*4*100;
-		do_div(temp64, ddr_bw_val[0][ddrbw_time_num]);
-		ddr_bw_val[0][ddrbw_eff] = temp64;
-
-		ddr_bw_ch0->ddr_percent = temp64;
-		ddr_bw_ch0->ddr_time =
-			ddr_bw_val[0][ddrbw_time_num]/(ddr_freq*1000);
-		ddr_bw_ch0->ddr_wr =
-			(ddr_bw_val[0][ddrbw_wr_num]*8*4)*
-				ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-		ddr_bw_ch0->ddr_rd =
-			(ddr_bw_val[0][ddrbw_rd_num]*8*4)*
-				ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-		ddr_bw_ch0->ddr_act =
-			ddr_bw_val[0][ddrbw_act_num];
-		ddr_bw_ch0->ddr_total =
-			ddr_freq*2*4;
-
-		ddr_bw_ch0->cpum = (noc_readl(0x400+0x178)<<16)
-			+ (noc_readl(0x400+0x164));
-		ddr_bw_ch0->gpu = (noc_readl(0x800+0x178)<<16)
-			+ (noc_readl(0x800+0x164));
-		ddr_bw_ch0->peri = (noc_readl(0xc00+0x178)<<16)
-			+ (noc_readl(0xc00+0x164));
-		ddr_bw_ch0->video = (noc_readl(0x1000+0x178)<<16)
-			+ (noc_readl(0x1000+0x164));
-		ddr_bw_ch0->vio0 = (noc_readl(0x1400+0x178)<<16)
-			+ (noc_readl(0x1400+0x164));
-		ddr_bw_ch0->vio1 = (noc_readl(0x1800+0x178)<<16)
-			+ (noc_readl(0x1800+0x164));
-		ddr_bw_ch0->vio2 = (noc_readl(0x1c00+0x178)<<16)
-			+ (noc_readl(0x1c00+0x164));
-
-		ddr_bw_ch0->cpum =
-			ddr_bw_ch0->cpum*ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-		ddr_bw_ch0->gpu =
-			ddr_bw_ch0->gpu*ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-		ddr_bw_ch0->peri =
-			ddr_bw_ch0->peri*ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-		ddr_bw_ch0->video =
-			ddr_bw_ch0->video*
-				ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-		ddr_bw_ch0->vio0 =
-			ddr_bw_ch0->vio0*ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-		ddr_bw_ch0->vio1 =
-			ddr_bw_ch0->vio1*ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-		ddr_bw_ch0->vio2 =
-			ddr_bw_ch0->vio2*ddr_freq/ddr_bw_val[0][ddrbw_time_num];
-	}
-end:
-	ddr_monitor_start();
-}
-
-/******************************************************************/
 
 static int ddr_init(uint32 dram_speed_bin, uint32 freq)
 {
@@ -4536,7 +4350,7 @@ static int ddr_init(uint32 dram_speed_bin, uint32 freq)
     struct clk *clk;
     uint32 ch,cap=0,cs_cap;
 
-    ddr_print("version 1.00 20150126 \n");
+    ddr_print("version 1.00 20140603 \n");
 
     p_ddr_reg = kern_to_pie(rockchip_pie_chunk, &DATA(ddr_reg));
     p_ddr_set_pll = fn_to_pie(rockchip_pie_chunk, &FUNC(ddr_set_pll));
@@ -4629,10 +4443,10 @@ static int ddr_init(uint32 dram_speed_bin, uint32 freq)
         ddr_print("failed to get ddr clk\n");
         clk = NULL;
     }
-    if(freq != 0)
-        tmp = clk_set_rate(clk, 1000*1000*freq);
-    else
-        tmp = clk_set_rate(clk, clk_get_rate(clk));
+    //if(freq != 0)
+    //    tmp = clk_set_rate(clk, 1000*1000*freq);
+    //else
+    //    tmp = clk_set_rate(clk, clk_get_rate(clk));
     ddr_print("init success!!! freq=%luMHz\n", clk ? clk_get_rate(clk)/1000000 : freq);
 
     for(ch=0;ch<CH_MAX;ch++)

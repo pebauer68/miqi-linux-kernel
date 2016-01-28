@@ -4,10 +4,11 @@
 #include <linux/io.h>
 #include <linux/scatterlist.h>
 #include <linux/dmaengine.h>
+#include <linux/interrupt.h>
 
 
 #if 1
-#define DBG_SPI(x...)  if(atomic_read(&dws->debug_flag) == 1) printk(KERN_DEBUG x)
+#define DBG_SPI(x...)  if(atomic_read(&dws->debug_flag) == 1) printk(x)
 #else
 #define DBG_SPI(x...)
 #endif
@@ -179,8 +180,6 @@ struct dw_spi {
 	u8			n_bytes;	/* current is a 1/2 bytes op */
 	u8			max_bits_per_word;	/* maxim is 16b */
 	u32			dma_width;
-	int			dmatdlr;
-	int			dmardlr;
 	int			cs_change;
 	void			*tx_buffer;
 	void			*rx_buffer;

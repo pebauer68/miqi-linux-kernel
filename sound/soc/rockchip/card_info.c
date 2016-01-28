@@ -18,7 +18,7 @@
 /*
   Get sound card infos:
       audio-codec
-      audio-controller
+      i2s-controller
 
       format
 
@@ -30,14 +30,14 @@
       bitclock-master
       frame-master
 
-  Get audio-codec and audio-controller in this fun,
+  Get audio-codec and i2s-controller in this fun,
   and get oher infos in fun snd_soc_of_parse_daifmt().
 
   Set in dts:
 		dais {
 			dai0 {
 				audio-codec = <&codec_of_node>;
-				audio-controller = <&cpu_of_node>;
+				i2s-controller = <&cpu_of_node>;
 				format = "i2s";
 				//continuous-clock;
 				//bitclock-inversion;
@@ -48,7 +48,7 @@
 
 			dai1 {
 				audio-codec = <&codec_of_node>;
-				audio-controller = <&cpu_of_node>;
+				i2s-controller = <&cpu_of_node>;
 				format = "dsp_a";
 				//continuous-clock;
 				bitclock-inversion;
@@ -58,27 +58,24 @@
 			};
 		};
  */
-int rockchip_of_get_sound_card_info_(struct snd_soc_card *card,
-				     bool is_need_fmt)
+int rockchip_of_get_sound_card_info_(struct snd_soc_card *card, bool is_need_fmt)
 {
 	struct device_node *dai_node, *child_dai_node;
 	int dai_num;
 
 	dai_node = of_get_child_by_name(card->dev->of_node, "dais");
 	if (!dai_node) {
-		dev_err(card->dev, "%s() Can not get child: dais\n",
-			__func__);
+		dev_err(card->dev, "%s() Can not get child: dais\n", __FUNCTION__);
 		return -EINVAL;
 	}
 
 	dai_num = 0;
 
 	for_each_child_of_node(dai_node, child_dai_node) {
+
 		if (is_need_fmt) {
-			card->dai_link[dai_num].dai_fmt =
-				snd_soc_of_parse_daifmt(child_dai_node, NULL);
-			if ((card->dai_link[dai_num].dai_fmt &
-				SND_SOC_DAIFMT_MASTER_MASK) == 0) {
+			card->dai_link[dai_num].dai_fmt = snd_soc_of_parse_daifmt(child_dai_node, NULL);
+			if ((card->dai_link[dai_num].dai_fmt & SND_SOC_DAIFMT_MASTER_MASK) == 0) {
 				dev_err(card->dev,
 					"Property 'format' missing or invalid\n");
 				return -EINVAL;
@@ -89,8 +86,7 @@ int rockchip_of_get_sound_card_info_(struct snd_soc_card *card,
 		card->dai_link[dai_num].cpu_dai_name = NULL;
 		card->dai_link[dai_num].platform_name = NULL;
 
-		card->dai_link[dai_num].codec_of_node = of_parse_phandle(
-			child_dai_node,
+		card->dai_link[dai_num].codec_of_node = of_parse_phandle(child_dai_node,
 			"audio-codec", 0);
 		if (!card->dai_link[dai_num].codec_of_node) {
 			dev_err(card->dev,
@@ -98,17 +94,15 @@ int rockchip_of_get_sound_card_info_(struct snd_soc_card *card,
 			return -EINVAL;
 		}
 
-		card->dai_link[dai_num].cpu_of_node = of_parse_phandle(
-			child_dai_node,
-			"audio-controller", 0);
+		card->dai_link[dai_num].cpu_of_node = of_parse_phandle(child_dai_node,
+			"i2s-controller", 0);
 		if (!card->dai_link[dai_num].cpu_of_node) {
 			dev_err(card->dev,
-				"Property 'audio-controller' missing or invalid\n");
+				"Property 'i2s-controller' missing or invalid\n");
 			return -EINVAL;
 		}
 
-		card->dai_link[dai_num].platform_of_node =
-			card->dai_link[dai_num].cpu_of_node;
+		card->dai_link[dai_num].platform_of_node = card->dai_link[dai_num].cpu_of_node;
 
 		if (++dai_num >= card->num_links)
 			break;
@@ -116,7 +110,7 @@ int rockchip_of_get_sound_card_info_(struct snd_soc_card *card,
 
 	if (dai_num < card->num_links) {
 		dev_err(card->dev, "%s() Can not get enough property for dais, dai: %d, max dai num: %d\n",
-			__func__, dai_num, card->num_links);
+			__FUNCTION__, dai_num, card->num_links);
 		return -EINVAL;
 	}
 

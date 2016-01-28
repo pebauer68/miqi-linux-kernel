@@ -173,10 +173,10 @@ static void rk3188_lcdc_read_reg_defalut_cfg(struct lcdc_device
 				lcdc_dev->atv_layer_cnt = win0->state;
 			else
 				lcdc_dev->atv_layer_cnt = win1->state;
-			win0->area[0].swap_rb = (value & m_WIN0_RB_SWAP) >> 15;
-			win1->area[0].swap_rb = (value & m_WIN1_RB_SWAP) >> 19;
-			win0->area[0].fmt_cfg = (value & m_WIN0_FORMAT) >> 3;
-			win1->area[0].fmt_cfg = (value & m_WIN1_FORMAT) >> 6;
+			win0->swap_rb = (value & m_WIN0_RB_SWAP) >> 15;
+			win1->swap_rb = (value & m_WIN1_RB_SWAP) >> 19;
+			win0->fmt_cfg = (value & m_WIN0_FORMAT) >> 3;
+			win1->fmt_cfg = (value & m_WIN1_FORMAT) >> 6;
 			break;
 		case WIN0_SCL_FACTOR_YRGB:
 			win0->scale_yrgb_x = (value >> 0) & 0xffff;
@@ -325,8 +325,8 @@ static int rk3188_lcdc_alpha_cfg(struct lcdc_device *lcdc_dev)
 {
 	int win0_top = 0;
 	u32 mask, val;
-	enum data_format win0_format = lcdc_dev->driver.win[0]->area[0].format;
-	enum data_format win1_format = lcdc_dev->driver.win[1]->area[0].format;
+	enum data_format win0_format = lcdc_dev->driver.win[0]->format;
+	enum data_format win1_format = lcdc_dev->driver.win[1]->format;
 
 	int win0_alpha_en = ((win0_format == ARGB888)
 			     || (win0_format == ABGR888)) ? 1 : 0;
@@ -376,16 +376,15 @@ static int rk3188_lcdc_reg_update(struct rk_lcdc_driver *dev_drv)
 			     m_WIN0_EN | m_WIN1_EN | m_WIN0_RB_SWAP |
 			     m_WIN1_RB_SWAP,
 			     v_WIN0_EN(win0->state) | v_WIN1_EN(win1->state) |
-			     v_WIN0_RB_SWAP(win0->area[0].swap_rb) |
-			     v_WIN1_RB_SWAP(win1->area[0].swap_rb));
+			     v_WIN0_RB_SWAP(win0->swap_rb) |
+			     v_WIN1_RB_SWAP(win1->swap_rb));
 		lcdc_writel(lcdc_dev, WIN0_SCL_FACTOR_YRGB,
 			    v_X_SCL_FACTOR(win0->scale_yrgb_x) |
 			    v_Y_SCL_FACTOR(win0->scale_yrgb_y));
 		lcdc_writel(lcdc_dev, WIN0_SCL_FACTOR_CBR,
 			    v_X_SCL_FACTOR(win0->scale_cbcr_x) |
 			    v_Y_SCL_FACTOR(win0->scale_cbcr_y));
-		lcdc_msk_reg(lcdc_dev, SYS_CTRL, m_WIN0_FORMAT,
-			     v_WIN0_FORMAT(win0->area[0].fmt_cfg));
+		lcdc_msk_reg(lcdc_dev, SYS_CTRL, m_WIN0_FORMAT, v_WIN0_FORMAT(win0->fmt_cfg));
 		lcdc_writel(lcdc_dev, WIN0_ACT_INFO, v_ACT_WIDTH(win0->area[0].xact) |
 			    v_ACT_HEIGHT(win0->area[0].yact));
 		lcdc_writel(lcdc_dev, WIN0_DSP_ST, v_DSP_STX(win0->area[0].dsp_stx) |
@@ -400,10 +399,9 @@ static int rk3188_lcdc_reg_update(struct rk_lcdc_driver *dev_drv)
 			    v_DSP_HEIGHT(win1->area[0].ysize));
 		lcdc_writel(lcdc_dev, WIN1_DSP_ST, v_DSP_STX(win1->area[0].dsp_stx) |
 			    v_DSP_STY(win1->area[0].dsp_sty));
-		lcdc_msk_reg(lcdc_dev, WIN_VIR, m_WIN1_VIR,
-			     ((win1->area[0].y_vir_stride)&0x1fff)<<16);
+		lcdc_msk_reg(lcdc_dev, WIN_VIR, m_WIN1_VIR, ((win1->area[0].y_vir_stride)&0x1fff)<<16);
 		lcdc_msk_reg(lcdc_dev, SYS_CTRL, m_WIN1_FORMAT,
-			     v_WIN1_FORMAT(win1->area[0].fmt_cfg));
+			     v_WIN1_FORMAT(win1->fmt_cfg));
 		lcdc_writel(lcdc_dev, WIN1_MST, win1->area[0].y_addr);
 		rk3188_lcdc_alpha_cfg(lcdc_dev);
 		lcdc_cfg_done(lcdc_dev);
@@ -760,7 +758,7 @@ static int win0_set_par(struct lcdc_device *lcdc_dev,
 
 	ScaleYrgbX = CalScale(xact, win->area[0].xsize);
 	ScaleYrgbY = CalScale(yact, win->area[0].ysize);
-	switch (win->area[0].format) {
+	switch (win->format) {
 	case ARGB888:
 	case XBGR888:
 	case ABGR888:
@@ -795,7 +793,7 @@ static int win0_set_par(struct lcdc_device *lcdc_dev,
 
 	DBG(1, "lcdc%d>>%s\n>>format:%s>>>xact:%d>>yact:%d>>xsize:%d>>ysize:%d\n"
 		">>xvir:%d>>yvir:%d>>xpos:%d>>ypos:%d>>\n", lcdc_dev->id,
-		__func__, get_format_string(win->area[0].format, fmt), xact,
+		__func__, get_format_string(win->format, fmt), xact,
 		yact, win->area[0].xsize, win->area[0].ysize, xvir, yvir, xpos, ypos);
 
 	spin_lock(&lcdc_dev->reg_lock);
@@ -804,28 +802,28 @@ static int win0_set_par(struct lcdc_device *lcdc_dev,
 	win->scale_yrgb_y = ScaleYrgbY;
 	win->scale_cbcr_x = ScaleCbrX;
 	win->scale_cbcr_y = ScaleCbrY;
-	win->area[0].fmt_cfg = fmt_cfg;
+	win->fmt_cfg = fmt_cfg;
 	win->area[0].dsp_stx = xpos;
 	win->area[0].dsp_sty = ypos;
 	
-	switch (win->area[0].format) {
+	switch (win->format) {
 	case XBGR888:
 	case ABGR888:
-		win->area[0].swap_rb = 1;
+		win->swap_rb = 1;
 		break;
 	case ARGB888:
-		win->area[0].swap_rb = 0;
+		win->swap_rb = 0;
 		break;
 	case RGB888:
-		win->area[0].swap_rb = 0;
+		win->swap_rb = 0;
 		break;
 	case RGB565:
-		win->area[0].swap_rb = 0;
+		win->swap_rb = 0;
 		break;
 	case YUV422:
 	case YUV420:
 	case YUV444:
-		win->area[0].swap_rb = 0;
+		win->swap_rb = 0;
 		break;
 	default:
 		dev_err(lcdc_dev->driver.dev,
@@ -844,8 +842,7 @@ static int win0_set_par(struct lcdc_device *lcdc_dev,
 						v_DSP_HEIGHT(win->area[0].ysize));
 		lcdc_msk_reg(lcdc_dev, WIN_VIR, m_WIN0_VIR, v_WIN0_VIR_VAL(win->area[0].y_vir_stride));
 		lcdc_msk_reg(lcdc_dev, SYS_CTRL, m_WIN0_EN | m_WIN0_RB_SWAP,
-			     v_WIN0_EN(win->state) |
-			     v_WIN0_RB_SWAP(win->area[0].swap_rb));
+				v_WIN0_EN(win->state) | v_WIN0_RB_SWAP(win->swap_rb));
 		lcdc_msk_reg(lcdc_dev, WIN0_COLOR_KEY, m_COLOR_KEY_EN, v_COLOR_KEY_EN(0));
 	}
 	spin_unlock(&lcdc_dev->reg_lock);
@@ -869,48 +866,45 @@ static int win1_set_par(struct lcdc_device *lcdc_dev,
 
 	DBG(1, "lcdc%d>>%s>>format:%s>>>xact:%d>>yact:%d>>xsize:%d>>ysize:%d\n"
 		">>xvir:%d>>yvir:%d>>xpos:%d>>ypos:%d>>\n", lcdc_dev->id,
-		__func__, get_format_string(win->area[0].format, fmt),
-		xact, yact, win->area[0].xsize, win->area[0].ysize,
-		xvir, yvir, xpos, ypos);
+		__func__, get_format_string(win->format, fmt), xact, yact,
+		win->area[0].xsize, win->area[0].ysize, xvir, yvir, xpos, ypos);
 
 	spin_lock(&lcdc_dev->reg_lock);
 	win->area[0].dsp_stx = xpos;
 	win->area[0].dsp_sty = ypos;
-	switch (win->area[0].format) {
+	switch (win->format) {
 	case XBGR888:
 	case ABGR888:
 		fmt_cfg = 0;
-		win->area[0].swap_rb = 1;
+		win->swap_rb = 1;
 		break;
 	case ARGB888:
 		fmt_cfg = 0;
-		win->area[0].swap_rb = 0;
+		win->swap_rb = 0;
 
 		break;
 	case RGB888:
 		fmt_cfg = 1;
-		win->area[0].swap_rb = 0;
+		win->swap_rb = 0;
 		break;
 	case RGB565:
 		fmt_cfg = 2;
-		win->area[0].swap_rb = 0;
+		win->swap_rb = 0;
 		break;
 	default:
 		dev_err(lcdc_dev->driver.dev,
 			"%s:un supported format!\n", __func__);
 		break;
 	}
-	win->area[0].fmt_cfg = fmt_cfg;
+	win->fmt_cfg = fmt_cfg;
 	if (likely(lcdc_dev->clk_on)) {
 		lcdc_writel(lcdc_dev, WIN1_DSP_INFO,v_DSP_WIDTH(win->area[0].xsize) |
 							v_DSP_HEIGHT(win->area[0].ysize));
 		lcdc_writel(lcdc_dev, WIN1_DSP_ST,v_DSP_STX(xpos) | v_DSP_STY(ypos));
 		lcdc_msk_reg(lcdc_dev, SYS_CTRL, m_WIN1_EN | m_WIN1_RB_SWAP,
-			     v_WIN1_EN(win->state) |
-			     v_WIN1_RB_SWAP(win->area[0].swap_rb));
+				v_WIN1_EN(win->state) | v_WIN1_RB_SWAP(win->swap_rb));
 		lcdc_msk_reg(lcdc_dev, SYS_CTRL,m_WIN1_FORMAT, v_WIN1_FORMAT(fmt_cfg));
-		lcdc_msk_reg(lcdc_dev, WIN_VIR, m_WIN1_VIR,
-			     ((win->area[0].y_vir_stride)&0x1fff)<<16);
+		lcdc_msk_reg(lcdc_dev, WIN_VIR, m_WIN1_VIR, ((win->area[0].y_vir_stride)&0x1fff)<<16);	
 	}
 	spin_unlock(&lcdc_dev->reg_lock);
 
@@ -1083,9 +1077,7 @@ static int rk3188_lcdc_blank(struct rk_lcdc_driver *dev_drv,
 	return 0;
 }
 
-static int rk3188_lcdc_get_win_state(struct rk_lcdc_driver *dev_drv,
-				     int win_id,
-				     int area_id)
+static int rk3188_lcdc_get_win_state(struct rk_lcdc_driver *dev_drv, int win_id)
 {
 	return 0;
 }
@@ -1308,7 +1300,8 @@ static int rk3188_lcdc_fps_mgr(struct rk_lcdc_driver *dev_drv, int fps,
 	return fps;
 }
 
-static int rk3188_fb_win_remap(struct rk_lcdc_driver *dev_drv, u16 order)
+static int rk3188_fb_win_remap(struct rk_lcdc_driver *dev_drv,
+			       enum fb_win_map_order order)
 {
 	mutex_lock(&dev_drv->fb_win_id_mutex);
 	if (order == FB_DEFAULT_ORDER)
@@ -1416,14 +1409,14 @@ int rk3188_lcdc_poll_vblank(struct rk_lcdc_driver *dev_drv)
 }
 
 
-static int rk3188_lcdc_get_dsp_addr(struct rk_lcdc_driver *dev_drv,unsigned int dsp_addr[][4])
+static int rk3188_lcdc_get_dsp_addr(struct rk_lcdc_driver *dev_drv,unsigned int *dsp_addr)
 {
 	struct lcdc_device *lcdc_dev =
 	    container_of(dev_drv, struct lcdc_device, driver);
 
 	if(lcdc_dev->clk_on){
-		dsp_addr[0][0] = lcdc_readl(lcdc_dev, WIN0_YRGB_MST0);
-		dsp_addr[1][0] = lcdc_readl(lcdc_dev, WIN1_MST);
+		dsp_addr[0] = lcdc_readl(lcdc_dev, WIN0_YRGB_MST0);
+		dsp_addr[1] = lcdc_readl(lcdc_dev, WIN1_MST);
 	}
 	return 0;
 }
@@ -1531,12 +1524,6 @@ static int rk3188_lcdc_parse_dt(struct lcdc_device *lcdc_dev)
 		lcdc_dev->pwr18 = false;	/*default set it as 3.xv power supply */
 	else
 		lcdc_dev->pwr18 = (val ? true : false);
-
-	if (of_property_read_u32(np, "rockchip,fb-win-map", &val))
-		lcdc_dev->driver.fb_win_map = FB_DEFAULT_ORDER;
-	else
-		lcdc_dev->driver.fb_win_map = val;
-
 	return 0;
 }
 
