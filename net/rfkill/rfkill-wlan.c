@@ -145,7 +145,7 @@ int get_wifi_chip_type(void)
     } else if (strcmp(wifi_chip_type_string, "esp8089") == 0) {
         type = WIFI_ESP8089;
     } else {
-        type = WIFI_AP6210;
+        type = WIFI_RTL8188EU;
     }
     return type;
 }
