@@ -1528,7 +1528,6 @@ static int dw_mci_get_cd(struct mmc_host *mmc)
         struct dw_mci_board *brd = slot->host->pdata;
         struct dw_mci *host = slot->host;
         int gpio_cd = mmc_gpio_get_cd(mmc);
-        int gpio_val;
 #if 0
         if (cpu_is_rk312x() &&
                 soc_is_rk3126() &&
@@ -4086,14 +4085,8 @@ EXPORT_SYMBOL(dw_mci_remove);
 /*
  * TODO: we should probably disable the clock to the card in the suspend path.
  */
-extern int get_wifi_chip_type(void);
 int dw_mci_suspend(struct dw_mci *host)
 {
-	struct dw_mci_slot *slot = mmc_priv(host->mmc);
-
-	if((host->mmc->restrict_caps & RESTRICT_CARD_TYPE_SDIO) &&
-		((get_wifi_chip_type() == WIFI_ESP8089) || (get_wifi_chip_type() == WIFI_ESP8089)))
-		return 0;
         if(host->vmmc)
                 regulator_disable(host->vmmc);
 
@@ -4136,9 +4129,6 @@ int dw_mci_resume(struct dw_mci *host)
 	int i, ret, retry_cnt = 0;
 	u32 regs;
         struct dw_mci_slot *slot;
-	if((host->mmc->restrict_caps & RESTRICT_CARD_TYPE_SDIO) &&
-			((get_wifi_chip_type() == WIFI_ESP8089) || (get_wifi_chip_type() == WIFI_ESP8089)))
-		return 0;
     
         if (host->mmc->restrict_caps & RESTRICT_CARD_TYPE_SDIO) {
                 slot = mmc_priv(host->mmc);

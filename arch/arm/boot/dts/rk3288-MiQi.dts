@@ -13,52 +13,6 @@
     reset,pin =<&gpio7 GPIO_A6 GPIO_ACTIVE_HIGH>;	// hub reset pin
     status = "disabled";
   };
-  wireless-wlan {
-    compatible = "wlan-platdata";
-
-    /* wifi_chip_type - wifi chip define
-     * bcmwifi ==> like ap6xxx, rk90x;
-     * rtkwifi ==> like rtl8188xx, rtl8723xx,rtl8812auv;
-     * esp8089 ==> esp8089;
-     * other   ==> for other wifi;
-     */
-    wifi_chip_type = "bcmwifi";
-    sdio_vref = <1800>; //1800mv or 3300mv
-
-    //keep_wifi_power_on;
-    //power_ctrl_by_pmu;
-    power_pmu_regulator = "act_ldo3";
-    power_pmu_enable_level = <1>; //1->HIGH, 0->LOW
-
-    //vref_ctrl_enable;
-    //vref_ctrl_gpio = <&gpio0 GPIO_A2 GPIO_ACTIVE_HIGH>;
-    vref_pmu_regulator = "act_ldo3";
-    vref_pmu_enable_level = <1>; //1->HIGH, 0->LOW
-
-    WIFI,poweren_gpio = <&gpio4 GPIO_D4 GPIO_ACTIVE_HIGH>;
-    WIFI,host_wake_irq = <&gpio4 GPIO_D6 GPIO_ACTIVE_HIGH>;
-    //WIFI,reset_gpio = <&gpio0 GPIO_A2 GPIO_ACTIVE_LOW>;
-
-    status = "okay";
-  };
-
-  wireless-bluetooth {
-    compatible = "bluetooth-platdata";
-
-    //wifi-bt-power-toggle;
-
-    uart_rts_gpios = <&gpio4 GPIO_C3 GPIO_ACTIVE_LOW>;
-    pinctrl-names = "default","rts_gpio";
-    pinctrl-0 = <&uart0_rts>;
-    pinctrl-1 = <&uart0_rts_gpio>;
-
-    BT,power_gpio = <&gpio4 GPIO_D3 GPIO_ACTIVE_HIGH>;
-    BT,reset_gpio = <&gpio4 GPIO_D5 GPIO_ACTIVE_HIGH>;
-    BT,wake_gpio = <&gpio4 GPIO_D2 GPIO_ACTIVE_HIGH>;
-    BT,wake_host_irq = <&gpio4 GPIO_D7 GPIO_ACTIVE_LOW>;
-
-    status = "okay";
-  };
 
   pwm_regulator {
     compatible = "rockchip_pwm_regulator";
@@ -115,11 +69,7 @@
 	    gpios = <&gpio7 GPIO_A2 GPIO_ACTIVE_HIGH>;
     };  
   }; 
-  atx8_unsetup{
-    compatible = "firefly,noatx8";
-    atx8-rst = <&gpio7 GPIO_C5 GPIO_ACTIVE_HIGH>;
-    status = "okay";
-  };
+
   usb_control {
     compatible = "rockchip,rk3288-usb-control";
 
@@ -148,6 +98,7 @@
   init-gpios = <&gpio8 GPIO_A0 GPIO_ACTIVE_HIGH
     &gpio7 GPIO_B1 GPIO_ACTIVE_HIGH		
     &gpio0 GPIO_A6 GPIO_ACTIVE_HIGH
+    &gpio0 GPIO_C2 GPIO_ACTIVE_HIGH
     &gpio4 GPIO_B0 GPIO_ACTIVE_HIGH>;
   gpio0_gpio {
   gpio0_c2: gpio0-c2 {
@@ -338,12 +289,6 @@
   status = "disabled";
 };
 
-&uart_bt {
-  status = "okay";
-  dma-names = "!tx", "!rx";
-  pinctrl-0 = <&uart0_xfer &uart0_cts>;
-};
-
 &uart_dbg {
   status = "okay";
 };
@@ -417,12 +362,13 @@
   };
 };
 
+/*J9 header*/
 &i2c1 {
-  status = "okay";
+  status = "disabled";
 };
 
 &i2c2 {
-  status = "okay";
+  status = "disabled";
  es8323: es8323@10 {
     compatible = "es8323";
     reg = <0x10>;
@@ -437,7 +383,7 @@
 };
 
 &i2c3 {
-  status = "okay";
+  status = "disabled";
 };
 
 &i2c4 {
@@ -549,7 +495,7 @@
 
 &pwm0 {
   interrupts = <GIC_SPI 78 IRQ_TYPE_LEVEL_HIGH>;
-  status = "okay";
+  status = "disabled";
 };
 
 &pwm1 {
