@@ -7,12 +7,6 @@ make rk3288-MiQi_defconfig
 make -j8 rk3288-MiQi.img
 make -j8 modules
 
-./mkbootimg --kernel arch/arm/boot/zImage \
-    --ramdisk rootfs.cpio.gz  \
-    --second resource.img \
-    --output linux-boot.img
-
-
 if [ -d ${LINUX_HWPACK_OUT} ]; then
     rm -rf ${LINUX_HWPACK_OUT}
 fi
