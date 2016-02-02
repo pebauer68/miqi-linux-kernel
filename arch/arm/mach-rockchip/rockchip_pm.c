@@ -550,7 +550,7 @@ int rk_pm_invalid(suspend_state_t state)
 
 static struct platform_suspend_ops rockchip_suspend_ops = {
 	.enter		= rkpm_enter,
-	.valid		= suspend_valid_only_mem,
+	.valid		= rk_pm_invalid,
 	.prepare 	= rkpm_suspend_prepare,
 	.finish		= rkpm_suspend_finish,
 };
