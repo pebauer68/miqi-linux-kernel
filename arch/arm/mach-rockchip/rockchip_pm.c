@@ -542,6 +542,11 @@ static void rkpm_suspend_finish(void)
 	#endif
 }
 
+/* Linux don't support suspend to ram  */
+int rk_pm_invalid(suspend_state_t state)
+{
+       return (1==2);
+}
 
 static struct platform_suspend_ops rockchip_suspend_ops = {
 	.enter		= rkpm_enter,
