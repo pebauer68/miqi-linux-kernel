@@ -1419,7 +1419,7 @@ static int android_bind(struct usb_composite_dev *cdev)
 	strings_dev[STRING_PRODUCT_IDX].id = id;
 	device_desc.iProduct = id;
 
-        /* Default strings - should be updated by userspace */
+	/* Default strings - should be updated by userspace */
 	strncpy(manufacturer_string, "Android", sizeof(manufacturer_string)-1);
 	strncpy(product_string, "Android", sizeof(product_string) - 1);
 	strncpy(serial_string, "0123456789ABCDEF", sizeof(serial_string) - 1);

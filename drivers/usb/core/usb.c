@@ -1004,7 +1004,7 @@ static int __init usb_init(void)
 		return 0;
 	}
 	usb_init_pool_max();
-	
+
 	retval = usb_debugfs_init();
 	if (retval)
 		goto out;

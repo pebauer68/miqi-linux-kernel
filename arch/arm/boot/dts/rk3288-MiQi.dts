@@ -11,7 +11,7 @@
   hsic-usb-hub{
     compatible = "hub_reset";
     reset,pin =<&gpio7 GPIO_A6 GPIO_ACTIVE_HIGH>;	// hub reset pin
-    status = "disabled";
+    status = "okay";
   };
 
   pwm_regulator {
