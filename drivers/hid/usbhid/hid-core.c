@@ -1362,6 +1362,9 @@ static int usbhid_probe(struct usb_interface *intf, const struct usb_device_id *
 	usbhid->intf = intf;
 	usbhid->ifnum = interface->desc.bInterfaceNumber;
 
+	printk("[%s] add a bit delay\n", __FUNCTION__);
+	msleep(1000);
+
 	init_waitqueue_head(&usbhid->wait);
 	INIT_WORK(&usbhid->reset_work, hid_reset);
 	setup_timer(&usbhid->io_retry, hid_retry_timeout, (unsigned long) hid);
