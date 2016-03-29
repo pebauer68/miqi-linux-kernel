@@ -484,8 +484,8 @@ static void __init rk3288_init_cpuidle(void)
 {
 	int ret;
 
-	if (!rockchip_jtag_enabled)
-		rk3288_cpuidle_driver.states[0].enter = rk3288_cpuidle_enter;
+	rk3288_cpuidle_driver.states[0].enter = rk3288_cpuidle_enter;
+
 	ret = cpuidle_register(&rk3288_cpuidle_driver, NULL);
 	if (ret)
 		pr_err("%s: failed to register cpuidle driver: %d\n", __func__, ret);
@@ -501,8 +501,6 @@ static void __init rk3288_init_late(void)
 #ifdef CONFIG_CPU_IDLE
 	rk3288_init_cpuidle();
 #endif
-	if (rockchip_jtag_enabled)
-		clk_prepare_enable(clk_get_sys(NULL, "clk_jtag"));
 }
 
 DT_MACHINE_START(RK3288_DT, "Rockchip RK3288 (Flattened Device Tree)")
@@ -542,87 +540,14 @@ static int __init rk3288_pie_init(void)
     return 0;
 }
 arch_initcall(rk3288_pie_init);
+
 #ifdef CONFIG_PM
-#include "pm-rk3288.c"
-
-static u32 rk_pmu_pwrdn_st;
-static inline void rk_pm_soc_pd_suspend(void)
-{
-    rk_pmu_pwrdn_st = pmu_readl(RK3288_PMU_PWRDN_ST);
-
-    if(!(rk_pmu_pwrdn_st&BIT(pmu_st_map[PD_GPU])))
-    rk3288_sys_set_power_domain(PD_GPU, false);
-
-    if(!(rk_pmu_pwrdn_st&BIT(pmu_st_map[PD_HEVC])))
-    rk3288_sys_set_power_domain(PD_HEVC, false);
-
-    if(!(rk_pmu_pwrdn_st&BIT(pmu_st_map[PD_VIO])))
-    rk3288_sys_set_power_domain(PD_VIO, false);
-
-    if(!(rk_pmu_pwrdn_st&BIT(pmu_st_map[PD_VIDEO])))
-    rk3288_sys_set_power_domain(PD_VIDEO, false);
-#if 0
-    rkpm_ddr_printascii("pd state:");
-    rkpm_ddr_printhex(rk_pmu_pwrdn_st);        
-    rkpm_ddr_printhex(pmu_readl(RK3288_PMU_PWRDN_ST));        
-    rkpm_ddr_printascii("\n");
- #endif  
-}
-static inline void rk_pm_soc_pd_resume(void)
-{
-    if(!(rk_pmu_pwrdn_st&BIT(pmu_st_map[PD_GPU])))
-        rk3288_sys_set_power_domain(PD_GPU, true);
-
-    if(!(rk_pmu_pwrdn_st&BIT(pmu_st_map[PD_HEVC])))
-        rk3288_sys_set_power_domain(PD_HEVC, true);
-
-    if(!(rk_pmu_pwrdn_st&BIT(pmu_st_map[PD_VIO])))
-     rk3288_sys_set_power_domain(PD_VIO, true);
-
-    if(!(rk_pmu_pwrdn_st&BIT(pmu_st_map[PD_VIDEO])))
-        rk3288_sys_set_power_domain(PD_VIDEO, true);
-
-#if 0
-    rkpm_ddr_printascii("pd state:");
-    rkpm_ddr_printhex(pmu_readl(RK3288_PMU_PWRDN_ST));        
-    rkpm_ddr_printascii("\n");
-#endif    
-}
-void inline rkpm_periph_pd_dn(bool on)
-{
-    rk3288_sys_set_power_domain(PD_PERI, on);
-}
-
 static void __init rk3288_init_suspend(void)
 {
-    printk("%s\n",__FUNCTION__);
-    rockchip_suspend_init();       
-    rkpm_pie_init();
-    rk3288_suspend_init();
-   rkpm_set_ops_pwr_dmns(rk_pm_soc_pd_suspend,rk_pm_soc_pd_resume);  
 }
 
-#if 0
-extern bool console_suspend_enabled;
-
-static int  __init rk3288_pm_dbg(void)
-{
-#if 1    
-        console_suspend_enabled=0;
-        do{
-            pm_suspend(PM_SUSPEND_MEM);
-        }
-        while(1);
-        
 #endif
 
-}
-
-//late_initcall_sync(rk3288_pm_dbg);
-#endif
-
-
-#endif
 #define sram_printascii(s) do {} while (0) /* FIXME */
 #include "ddr_rk32.c"
 
