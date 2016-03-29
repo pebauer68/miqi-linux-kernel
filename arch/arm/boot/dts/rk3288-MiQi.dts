@@ -11,7 +11,7 @@
   hsic-usb-hub{
     compatible = "hub_reset";
     reset,pin =<&gpio7 GPIO_A6 GPIO_ACTIVE_HIGH>;	// hub reset pin
-    status = "okay";
+    status = "disabled";
   };
 
   pwm_regulator {
@@ -321,15 +321,7 @@
 
 /*FIXME: disabled will cause hdmi issue!*/
 &i2c4 {
-  status = "okay";
-  vga_ddc@50 {
-    compatible = "firefly,vga_ddc";
-    reg = <0x50>;
-    gpio-pwn = <&gpio0 GPIO_C1 GPIO_ACTIVE_HIGH>;
-    rockchip,source = <0>; //0: LCDC0; 1: LCDC1
-    rockchip,prop = <PRMRY>;//<EXTEND>
-    status = "okay";
-  };
+  status = "disabled";
 };
 
 &i2c5 {

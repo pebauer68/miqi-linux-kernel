@@ -1,0 +1,4 @@
+config MIQI_MISC
+        bool "MiQi Misc driver"
+        help
+          Support MiQi misc driver
