@@ -227,6 +227,13 @@ static int cpufreq_init(struct cpufreq_policy *policy)
 	
 	//set freq min max
 	cpufreq_frequency_table_cpuinfo(policy, freq_table);
+
+	if (clk_cpu_dvfs_node->def_min_rate)
+		policy->min = clk_cpu_dvfs_node->def_min_rate;
+
+	if (clk_cpu_dvfs_node->def_max_rate)
+		policy->max = clk_cpu_dvfs_node->def_max_rate;
+
 	//sys nod
 	cpufreq_frequency_table_get_attr(freq_table, policy->cpu);
 

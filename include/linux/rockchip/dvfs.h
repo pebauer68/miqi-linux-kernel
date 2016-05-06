@@ -118,6 +118,8 @@ struct dvfs_node {
 	int			support_pvtm;
 	unsigned int		min_rate;	//limit min frequency
 	unsigned int		max_rate;	//limit max frequency
+	unsigned int		def_min_rate;	//default limit min frequency
+	unsigned int		def_max_rate;	//default limit max frequency
 	unsigned long		last_set_rate;
 	unsigned int		channel;
 	unsigned int		temp_channel;

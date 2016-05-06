@@ -1913,6 +1913,9 @@ static int dvfs_node_parse_dt(struct device_node *np,
 	}
 	dvfs_node->temp_limit_rate = -1;
 
+	of_property_read_u32_index(np, "default-min-freq", 0, &dvfs_node->def_min_rate);
+	of_property_read_u32_index(np, "default-max-freq", 0, &dvfs_node->def_max_rate);
+
 	ret = of_property_read_u32_index(np, "support-pvtm", 0,
 					 &dvfs_node->support_pvtm);
 	if (!ret) {
