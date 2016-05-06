@@ -943,7 +943,7 @@ static int act8846_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id 
 
 	#ifdef CONFIG_OF
 	act8846->pmic_hold_gpio = pdev->pmic_hold_gpio;
-	if (act8846->pmic_hold_gpio) {
+	if (act8846->pmic_hold_gpio > 0) {
 			ret = gpio_request(act8846->pmic_hold_gpio, "act8846_pmic_hold");
 			if (ret < 0) {
 				dev_err(act8846->dev,"Failed to request gpio %d with ret:""%d\n",	act8846->pmic_hold_gpio, ret);
@@ -959,7 +959,7 @@ static int act8846_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id 
 	/******************************set sleep vol & dcdc mode******************/
 	#ifdef CONFIG_OF
 	act8846->pmic_sleep_gpio = pdev->pmic_sleep_gpio;
-	if (act8846->pmic_sleep_gpio) {
+	if (act8846->pmic_sleep_gpio > 0) {
 			ret = gpio_request(act8846->pmic_sleep_gpio, "act8846_pmic_sleep");
 			if (ret < 0) {
 				dev_err(act8846->dev,"Failed to request gpio %d with ret:""%d\n",	act8846->pmic_sleep_gpio, ret);
@@ -975,7 +975,7 @@ static int act8846_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id 
     /****************************set cpu_det high **************************/
     #ifdef CONFIG_OF
     act8846->pmic_cpu_det_gpio = pdev->pmic_cpu_det_gpio;
-    if (act8846->pmic_cpu_det_gpio) {
+    if (act8846->pmic_cpu_det_gpio > 0) {
             ret = gpio_request(act8846->pmic_cpu_det_gpio, "act8846_pmic_cpu_det");
             if (ret < 0) {
                 dev_err(act8846->dev,"Failed to request gpio %d with ret:""%d\n",       act8846->pmic_cpu_det_gpio, ret);
@@ -989,7 +989,7 @@ static int act8846_i2c_probe(struct i2c_client *i2c, const struct i2c_device_id 
     
     #ifdef CONFIG_OF
     act8846->pmic_usb_hub_reset_gpio = pdev->pmic_usb_hub_reset_gpio;
-    if (act8846->pmic_usb_hub_reset_gpio) {
+    if (act8846->pmic_usb_hub_reset_gpio > 0) {
             ret = gpio_request(act8846->pmic_usb_hub_reset_gpio, "act8846_pmic_usb_hub_reset_gpio");
             if (ret < 0) {
                 dev_err(act8846->dev,"Failed to request gpio %d with ret:""%d\n",       act8846->pmic_usb_hub_reset_gpio, ret);
