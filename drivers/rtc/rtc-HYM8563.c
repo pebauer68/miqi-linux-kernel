@@ -28,7 +28,6 @@
 #define RTC_SPEED 	200 * 1000
 
 struct hym8563 {
-	int irq;
 	struct i2c_client *client;
 	struct mutex mutex;
 	struct rtc_device *rtc;
@@ -204,6 +203,7 @@ static int hym8563_read_datetime(struct i2c_client *client, struct rtc_time *tm)
 {
 	struct hym8563 *hym8563 = i2c_get_clientdata(client);
 	u8 regs[HYM8563_RTC_SECTION_LEN] = { 0, };
+
 	mutex_lock(&hym8563->mutex);
 //	for (i = 0; i < HYM8563_RTC_SECTION_LEN; i++) {
 //		hym8563_i2c_read_regs(client, RTC_SEC+i, &regs[i], 1);
@@ -310,123 +310,11 @@ static int hym8563_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	return hym8563_set_time(to_i2c_client(dev), tm);
 }
 
-static int hym8563_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *tm)
-{
-	struct i2c_client *client = to_i2c_client(dev);
-	struct hym8563 *hym8563 = i2c_get_clientdata(client);
-	u8 regs[4] = { 0, };
-	
-	pr_debug("enter\n");
-	mutex_lock(&hym8563->mutex);
-	hym8563_i2c_read_regs(client, RTC_A_MIN, regs, 4);
-	regs[0] = 0x0;
-	regs[0] |= TIE;
-	hym8563_i2c_set_regs(client, RTC_CTL2, regs, 1);
-	mutex_unlock(&hym8563->mutex);
-	return 0;
-}
-
-static int hym8563_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alarm)
-{	
-	struct i2c_client *client = to_i2c_client(dev);
-	struct hym8563 *hym8563 = i2c_get_clientdata(client);
-	struct rtc_time now, *tm = &alarm->time;
-	u8 regs[4] = { 0, };
-	u8 mon_day;	
-	unsigned long	alarm_sec, now_sec;
-	int diff_sec = 0;
-	
-	pr_debug("%4d-%02d-%02d(%d) %02d:%02d:%02d enabled %d\n",
-		1900 + tm->tm_year, tm->tm_mon + 1, tm->tm_mday, tm->tm_wday,
-		tm->tm_hour, tm->tm_min, tm->tm_sec, alarm->enabled);
-	
-	
-	hym8563_read_datetime(client, &now);
-
-	
-	mutex_lock(&hym8563->mutex);
-	rtc_tm_to_time(tm, &alarm_sec);
-	rtc_tm_to_time(&now, &now_sec);
-	
-	diff_sec = alarm_sec - now_sec;
-	
-	if((diff_sec > 0) && (diff_sec < 256))
-	{	
-		printk("%s:diff_sec= %ds , use time\n",__func__, diff_sec);	
-								
-		if (alarm->enabled == 1)
-		{
-			hym8563_set_count(client, diff_sec);
-			hym8563_enable_count(client, 1);
-		}
-			
-		else
-		{
-			hym8563_enable_count(client, 0);
-		}
-		
-	}
-	else
-	{				
-		printk("%s:diff_sec= %ds , use alarm\n",__func__, diff_sec);
-		hym8563_enable_count(client, 0);
-		
-		if(tm->tm_sec > 0)
-		{
-			rtc_tm_to_time(tm, &alarm_sec);
-			rtc_time_to_tm(alarm_sec, tm);
-		}
-
-		hym8563->alarm = *alarm;
-
-		regs[0] = 0x0;
-		hym8563_i2c_set_regs(client, RTC_CTL2, regs, 1);
-		mon_day = rtc_month_days(tm->tm_mon, tm->tm_year + 1900);
-		hym8563_i2c_read_regs(client, RTC_A_MIN, regs, 4);
-
-		if (tm->tm_min >= 60 || tm->tm_min < 0)		//set  min
-		regs[0x00] = bin2bcd(0x00) & 0x7f;
-		else
-		regs[0x00] = bin2bcd(tm->tm_min) & 0x7f;
-		if (tm->tm_hour >= 24 || tm->tm_hour < 0)	//set  hour
-		regs[0x01] = bin2bcd(0x00) & 0x7f;
-		else
-		regs[0x01] = bin2bcd(tm->tm_hour) & 0x7f;
-		regs[0x03] = bin2bcd (tm->tm_wday) & 0x7f;
-
-		/* if the input month day is bigger than the biggest day of this month, set the biggest day */
-		if (tm->tm_mday > mon_day)
-		regs[0x02] = bin2bcd(mon_day) & 0x7f;
-		else if (tm->tm_mday > 0)
-		regs[0x02] = bin2bcd(tm->tm_mday) & 0x7f;
-		else if (tm->tm_mday <= 0)
-		regs[0x02] = bin2bcd(0x01) & 0x7f;
-
-		hym8563_i2c_set_regs(client, RTC_A_MIN, regs, 4);	
-		hym8563_i2c_read_regs(client, RTC_A_MIN, regs, 4);	
-		hym8563_i2c_read_regs(client, RTC_CTL2, regs, 1);
-		if (alarm->enabled == 1)
-		regs[0] |= AIE;
-		else
-		regs[0] &= 0x0;
-		hym8563_i2c_set_regs(client, RTC_CTL2, regs, 1);
-		hym8563_i2c_read_regs(client, RTC_CTL2, regs, 1);
-
-		if(diff_sec <= 0)
-		{		
-			pr_info("alarm sec  <= now sec\n");
-		}			
-
-	}
-	
-	mutex_unlock(&hym8563->mutex);
-
-	return 0;
-}
 #ifdef CONFIG_HDMI_SAVE_DATA
 int hdmi_get_data(void)
 {
     u8 regs=0;
+
     if(gClient)
         hym8563_i2c_read_regs(gClient, RTC_T_COUNT, &regs, 1);
     else 
@@ -444,6 +332,7 @@ int hdmi_get_data(void)
 int hdmi_set_data(int data)
 {
     u8 regs = (data+1)&0xff;
+
     if(gClient)
         hym8563_i2c_set_regs(gClient, RTC_T_COUNT, &regs, 1);
     else 
@@ -460,7 +349,7 @@ EXPORT_SYMBOL(hdmi_set_data);
 #if defined(CONFIG_RTC_INTF_DEV) || defined(CONFIG_RTC_INTF_DEV_MODULE)
 static int hym8563_i2c_open_alarm(struct i2c_client *client)
 {
-	u8 data;	
+	u8 data;
 	hym8563_i2c_read_regs(client, RTC_CTL2, &data, 1);
 	data |= AIE;
 	hym8563_i2c_set_regs(client, RTC_CTL2, &data, 1);
@@ -470,7 +359,7 @@ static int hym8563_i2c_open_alarm(struct i2c_client *client)
 
 static int hym8563_i2c_close_alarm(struct i2c_client *client)
 {
-	u8 data;	
+	u8 data;
 	hym8563_i2c_read_regs(client, RTC_CTL2, &data, 1);
 	data &= ~AIE;
 	hym8563_i2c_set_regs(client, RTC_CTL2, &data, 1);
@@ -493,7 +382,8 @@ static int hym8563_rtc_ioctl(struct device *dev, unsigned int cmd, unsigned long
 		break;
 	default:
 		return -ENOIOCTLCMD;
-	}	
+	}
+
 	return 0;
 err:
 	return -EIO;
@@ -511,29 +401,11 @@ static int hym8563_rtc_proc(struct device *dev, struct seq_file *seq)
 #define hym8563_rtc_proc NULL
 #endif
 
-static irqreturn_t hym8563_wakeup_irq(int irq, void *data)
-{
-	struct hym8563 *hym8563 = data;	
-	struct i2c_client *client = hym8563->client;	
-	u8 value;
-	
-	mutex_lock(&hym8563->mutex);
-	hym8563_i2c_read_regs(client, RTC_CTL2, &value, 1);
-	value &= ~(AF|TF);
-	hym8563_i2c_set_regs(client, RTC_CTL2, &value, 1);	
-	mutex_unlock(&hym8563->mutex);
-	
-	rtc_update_irq(hym8563->rtc, 1, RTC_IRQF | RTC_AF | RTC_UF);
-
-	//printk("%s:irq=%d\n",__func__,irq);
-	return IRQ_HANDLED;
-}
-
 static const struct rtc_class_ops hym8563_rtc_ops = {
 	.read_time	= hym8563_rtc_read_time,
 	.set_time	= hym8563_rtc_set_time,
-	.read_alarm	= hym8563_rtc_read_alarm,
-	.set_alarm	= hym8563_rtc_set_alarm,
+	//	.read_alarm	= hym8563_rtc_read_alarm,
+	//.set_alarm	= hym8563_rtc_set_alarm,
 	.ioctl 		= hym8563_rtc_ioctl,
 	.proc		= hym8563_rtc_proc
 };
@@ -554,10 +426,6 @@ static int  hym8563_probe(struct i2c_client *client, const struct i2c_device_id 
 		.tm_sec = 0,
 	};	
 
-	struct device_node *np = client->dev.of_node;
-	unsigned long irq_flags;
-	int result;
-	
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
 		return -ENODEV;
 		
@@ -590,15 +458,6 @@ static int  hym8563_probe(struct i2c_client *client, const struct i2c_device_id 
 		hym8563_set_time(client, &tm);	//initialize the hym8563 
 	}	
 	
-	client->irq = of_get_named_gpio_flags(np, "irq_gpio", 0,(enum of_gpio_flags *)&irq_flags);
-	
-	hym8563->irq = gpio_to_irq(client->irq);
-	result = devm_request_threaded_irq(&client->dev, hym8563->irq, NULL, hym8563_wakeup_irq, irq_flags | IRQF_ONESHOT, client->dev.driver->name,hym8563 );
-	if (result) {
-		printk(KERN_ERR "%s:fail to request irq = %d, ret = 0x%x\n",__func__, hym8563->irq, result);	       
-		goto exit;	       
-	}
-	enable_irq_wake(hym8563->irq);
 	device_init_wakeup(&client->dev, 1);    
 	rtc = devm_rtc_device_register(&client->dev,
 			client->name,
