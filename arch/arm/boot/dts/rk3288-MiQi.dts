@@ -60,15 +60,20 @@
     status = "disabled";
   };
 	
-
-  board-leds {
+  board-control {
     compatible = "gpio-leds";
-    wrok {
+    work {
 	    linux,default-trigger = "timer";
 	    default-state = "on";
 	    gpios = <&gpio7 GPIO_A2 GPIO_ACTIVE_HIGH>;
-    };  
-  }; 
+    };
+
+    fan {
+    	    linux,default-trigger = "none";
+	    default-state = "on";
+	    gpios = <&gpio0 GPIO_C2 GPIO_ACTIVE_HIGH>;
+    };
+  };
 
   usb_control {
     compatible = "rockchip,rk3288-usb-control";
